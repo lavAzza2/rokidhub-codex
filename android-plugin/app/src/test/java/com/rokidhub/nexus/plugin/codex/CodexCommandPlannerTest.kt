@@ -1,6 +1,8 @@
 package com.rokidhub.nexus.plugin.codex
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CodexCommandPlannerTest {
@@ -12,6 +14,11 @@ class CodexCommandPlannerTest {
     @Test fun englishContinueSteersRunningTurn() = assertEquals("steer", CodexCommandPlanner.plan("Continue but be concise", true, true).action)
     @Test fun englishStopInterruptsConversation() = assertEquals("interrupt", CodexCommandPlanner.plan("Stop", true, true).action)
     @Test fun englishSummaryUsesSummarize() = assertEquals("summarize", CodexCommandPlanner.plan("Briefly what did you find?", true, false).action)
+    @Test fun explicitPhotoCommandRequestsGlassesSnapshot() {
+        assertTrue(CodexCommandPlanner.plan("Сделай фото и опиши, что передо мной", false, false).capturePhoto)
+        assertTrue(CodexCommandPlanner.plan("Take a picture and review it", true, false).capturePhoto)
+        assertFalse(CodexCommandPlanner.plan("Найди фото в проекте", false, false).capturePhoto)
+    }
     @Test fun voiceCanSelectProject() {
         val planned = CodexCommandPlanner.plan("Выбери проект Рокид", true, false)
         assertEquals("select_project", planned.action)

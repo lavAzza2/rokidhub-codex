@@ -31,14 +31,15 @@ show a warning. Verify its SHA-256 checksum before running it.
    choose the default project and local access policy, then click **Pair PC**.
 3. Enter the one-time PC code in the Codex integration card at
    [rokidhub.com](https://rokidhub.com).
-4. Install the APK through Nexus, grant STT/HUD/TTS permissions, open
+4. Install the APK through Nexus, grant STT/HUD/TTS/Camera permissions, open
    **RokidHub · Codex**, and enter its one-time code in the same card.
 5. Speak a task. The project alias is shown in the HUD footer; source paths and
    Codex credentials never leave the PC.
 
 Russian and English UI/STT are selected from the Android phone and Windows
 locale. Voice controls include `продолжай` / `continue`, `останови` / `stop`,
-short summary, and `выбери проект …` / `select project …`.
+short summary, `выбери проект …` / `select project …`, and explicit one-frame
+commands such as `сделай фото и опиши` / `take a photo and describe it`.
 
 ## Repository
 
@@ -74,6 +75,6 @@ variables or GitHub secrets. Keys and raw bearer tokens must never be committed.
 
 ## Status
 
-`v0.5.0-beta.1` is an early public beta. Keep local backups and start with the
+`v0.6.0-beta.1` is an early public beta. Keep local backups and start with the
 read-only policy. Automatic dangerous actions and unrestricted filesystem access
 are intentionally unavailable.

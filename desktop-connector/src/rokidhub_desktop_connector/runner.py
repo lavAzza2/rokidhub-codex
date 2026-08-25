@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import hashlib
 import time
 import sys
+import tempfile
 from pathlib import Path
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Protocol
@@ -110,7 +112,9 @@ class ConnectorService:
             project_name=project_name,
         )
         sequence += 1
+        temporary: tempfile.TemporaryDirectory[str] | None = None
         try:
+            temporary = self._prepare_attachment(job)
             result = self.engine.execute(job)
         except Exception as exc:
             print(f"Job {job_id} failed locally: {type(exc).__name__}: {exc}", file=sys.stderr)
@@ -123,7 +127,36 @@ class ConnectorService:
                 error_code=type(exc).__name__,
             )
             return
+        finally:
+            job.pop("local_image_path", None)
+            if temporary is not None:
+                temporary.cleanup()
         self.api.publish_event(job_id, lease_id, sequence, "final", result[:4000], project_name=project_name)
+
+    def _prepare_attachment(self, job: dict[str, Any]) -> tempfile.TemporaryDirectory[str] | None:
+        metadata = job.get("attachment")
+        if metadata is None:
+            return None
+        if not isinstance(metadata, dict):
+            raise ValueError("Некорректные метаданные фото")
+        if str(metadata.get("mime_type", "")) != "image/jpeg":
+            raise ValueError("Connector принимает только JPEG с камеры очков")
+        expected_size = int(metadata.get("byte_size", 0))
+        expected_sha256 = str(metadata.get("sha256", "")).lower()
+        if expected_size <= 0 or expected_size > 5 * 1024 * 1024:
+            raise ValueError("Некорректный размер фото")
+        if len(expected_sha256) != 64 or any(char not in "0123456789abcdef" for char in expected_sha256):
+            raise ValueError("Некорректная контрольная сумма фото")
+        content = self.api.download_attachment(str(job["job_id"]), str(job["lease_id"]))
+        if len(content) != expected_size or hashlib.sha256(content).hexdigest() != expected_sha256:
+            raise ValueError("Фото повреждено при передаче")
+        if len(content) < 4 or not content.startswith(b"\xff\xd8\xff") or not content.endswith(b"\xff\xd9"):
+            raise ValueError("Полученный файл не является JPEG")
+        temporary = tempfile.TemporaryDirectory(prefix="rokidhub-codex-photo-")
+        image_path = Path(temporary.name) / "capture.jpg"
+        image_path.write_bytes(content)
+        job["local_image_path"] = str(image_path)
+        return temporary
 
 
 def _engine_project_name(engine: JobEngine, job: dict[str, Any] | None) -> str:

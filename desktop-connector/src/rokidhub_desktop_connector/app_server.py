@@ -225,7 +225,7 @@ class AppServerEngine:
         self.current_approval_root = root
         self.client.start()
         if action == "steer":
-            return self._steer(conversation_id, str(job.get("prompt", "")))
+            return self._steer(conversation_id, job)
         if action == "interrupt":
             return self._interrupt(conversation_id)
 
@@ -252,10 +252,9 @@ class AppServerEngine:
             })
             self.loaded_threads.add(thread_id)
 
-        prompt = str(job.get("prompt", ""))
         turn_params: dict[str, Any] = {
             "threadId": thread_id,
-            "input": [{"type": "text", "text": prompt}],
+            "input": _user_inputs(job),
             "clientUserMessageId": str(job["job_id"]),
             "cwd": str(root),
             "approvalPolicy": self._approval_policy(),
@@ -368,7 +367,7 @@ class AppServerEngine:
         print(f"Локальное подтверждение {method}: {decision}")
         return decision
 
-    def _steer(self, conversation_id: str, prompt: str) -> str:
+    def _steer(self, conversation_id: str, job: dict[str, Any]) -> str:
         thread_id = self.config.conversation_threads.get(conversation_id)
         turn_id = self.active_turns.get(conversation_id)
         if not thread_id or not turn_id:
@@ -376,7 +375,7 @@ class AppServerEngine:
         self.client.request("turn/steer", {
             "threadId": thread_id,
             "expectedTurnId": turn_id,
-            "input": [{"type": "text", "text": prompt}],
+            "input": _user_inputs(job),
         })
         return "Уточнение передано в активный Codex turn."
 
@@ -387,6 +386,17 @@ class AppServerEngine:
             raise AppServerError("Нет активного turn для остановки")
         self.client.request("turn/interrupt", {"threadId": thread_id, "turnId": turn_id})
         return "Codex остановлен."
+
+
+def _user_inputs(job: dict[str, Any]) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = [{"type": "text", "text": str(job.get("prompt", ""))}]
+    local_image = str(job.get("local_image_path", "")).strip()
+    if local_image:
+        image_path = Path(local_image).resolve(strict=True)
+        if not image_path.is_file():
+            raise AppServerError("Локальное фото недоступно")
+        items.append({"type": "localImage", "path": str(image_path), "detail": "auto"})
+    return items
 
 
 def _last_agent_message(turn: dict[str, Any]) -> str:

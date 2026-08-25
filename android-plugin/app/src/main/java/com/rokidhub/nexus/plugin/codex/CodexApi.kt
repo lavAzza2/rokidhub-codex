@@ -13,6 +13,7 @@ data class ApiResult(val statusCode: Int, val payload: JSONObject) {
         .ifBlank { payload.optString("error") }
         .ifBlank { "RokidHub вернул ошибку $statusCode." }
 }
+
 class CodexApi(private val executor: ExecutorService = Executors.newSingleThreadExecutor()) {
     fun startPairing(installationId: String, callback: (Result<ApiResult>) -> Unit) = request(
         "POST",
@@ -40,6 +41,7 @@ class CodexApi(private val executor: ExecutorService = Executors.newSingleThread
         token: String,
         planned: PlannedJob,
         conversationId: String?,
+        attachmentId: String? = null,
         callback: (Result<ApiResult>) -> Unit,
     ) {
         val payload = JSONObject()
@@ -47,14 +49,55 @@ class CodexApi(private val executor: ExecutorService = Executors.newSingleThread
             .put("prompt", planned.prompt)
             .put("client_request_id", UUID.randomUUID().toString())
         if (conversationId != null) payload.put("conversation_id", conversationId)
+        if (attachmentId != null) payload.put("attachment_id", attachmentId)
         request("POST", "/jobs", payload, installationId, token, callback)
     }
+
+    fun uploadAttachment(
+        installationId: String,
+        token: String,
+        jpeg: ByteArray,
+        callback: (Result<ApiResult>) -> Unit,
+    ) = requestBytes("/attachments", jpeg, installationId, token, callback)
 
     fun job(installationId: String, token: String, jobId: String, callback: (Result<ApiResult>) -> Unit) = request(
         "GET", "/jobs/$jobId", null, installationId, token, callback,
     )
 
     fun close() = executor.shutdownNow()
+
+    private fun requestBytes(
+        path: String,
+        content: ByteArray,
+        installationId: String,
+        token: String,
+        callback: (Result<ApiResult>) -> Unit,
+    ) {
+        executor.execute {
+            callback(runCatching {
+                val connection = (URL(BuildConfig.ROKIDHUB_BASE_URL + path).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "POST"
+                    connectTimeout = 15_000
+                    readTimeout = 35_000
+                    doOutput = true
+                    setFixedLengthStreamingMode(content.size)
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("Content-Type", "image/jpeg")
+                    setRequestProperty("Authorization", "Bearer $token")
+                    setRequestProperty("X-RokidHub-Installation-ID", installationId)
+                }
+                try {
+                    connection.outputStream.use { it.write(content) }
+                    val status = connection.responseCode
+                    val stream = if (status in 200..299) connection.inputStream else connection.errorStream
+                    val body = stream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }.orEmpty()
+                    ApiResult(status, if (body.isBlank()) JSONObject() else JSONObject(body))
+                } finally {
+                    connection.disconnect()
+                }
+            })
+        }
+    }
 
     private fun request(
         method: String,

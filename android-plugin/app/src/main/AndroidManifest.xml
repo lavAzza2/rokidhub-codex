@@ -23,8 +23,8 @@
             <meta-data android:name="com.anezium.rokidbus.plugin.DISPLAY_NAME" android:value="RokidHub · Codex" />
             <meta-data android:name="com.anezium.rokidbus.plugin.ICON" android:value="terminal" />
             <meta-data android:name="com.anezium.rokidbus.plugin.API_VERSION" android:value="3" />
-            <meta-data android:name="com.anezium.rokidbus.plugin.CAPABILITIES" android:value="surfaces,stt,tts" />
-            <meta-data android:name="com.anezium.rokidbus.plugin.RECEIVE_PREFIXES" android:value="/plugin/rokidhub.codex,/system/plugin,/stt,/tts/started,/tts/done" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.CAPABILITIES" android:value="surfaces,stt,tts,camera" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.RECEIVE_PREFIXES" android:value="/plugin/rokidhub.codex,/system/plugin,/stt,/tts/started,/tts/done,/camera/snapshot/result,/camera/snapshot/error" />
             <meta-data android:name="com.anezium.rokidbus.plugin.LAUNCHABLE" android:value="true" />
         </service>
     </application>

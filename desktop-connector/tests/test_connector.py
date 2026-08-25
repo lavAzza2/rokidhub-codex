@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 import os
+import hashlib
 import ssl
 import threading
 from pathlib import Path
@@ -218,8 +219,9 @@ class ConfigTests(unittest.TestCase):
 
 
 class FakeApi:
-    def __init__(self, job):
+    def __init__(self, job, attachment_content=None):
         self.job = job
+        self.attachment_content = attachment_content
         self.events = []
         self.status_calls = 0
 
@@ -231,6 +233,11 @@ class FakeApi:
     def poll_job(self):
         job, self.job = self.job, None
         return {"job": job, "poll_after_seconds": 2}
+
+    def download_attachment(self, job_id, lease_id):
+        if self.attachment_content is None:
+            raise AssertionError("unexpected attachment download")
+        return self.attachment_content
 
     def publish_event(self, job_id, lease_id, sequence, kind, message="", status=None, error_code=None, project_name=None):
         self.events.append({
@@ -263,6 +270,42 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(api.default_project_name, "allowed")
         self.assertTrue(all(item["project_name"] == "allowed" for item in api.events))
         self.assertNotIn("Проверь проект", api.events[-1]["message"])
+
+    def test_photo_is_verified_written_temporarily_and_deleted_after_job(self):
+        jpeg = b"\xff\xd8\xff\xe0connector-photo\xff\xd9"
+        job = {
+            "job_id": "job-photo",
+            "lease_id": "lease-photo",
+            "conversation_id": "conversation-photo",
+            "action": "start",
+            "prompt": "Что видно на фото?",
+            "attachment": {
+                "mime_type": "image/jpeg",
+                "byte_size": len(jpeg),
+                "sha256": hashlib.sha256(jpeg).hexdigest(),
+            },
+        }
+
+        class PhotoEngine(MockEngine):
+            captured_path = None
+
+            def execute(self, current_job):
+                self.captured_path = Path(current_job["local_image_path"])
+                self.assert_photo(self.captured_path)
+                return "На фото тестовый кадр."
+
+            @staticmethod
+            def assert_photo(path):
+                if not path.is_file() or path.read_bytes() != jpeg:
+                    raise AssertionError("temporary photo is unavailable")
+
+        engine = PhotoEngine("C:\\allowed")
+        api = FakeApi(job, attachment_content=jpeg)
+        ConnectorService(api, engine, "0.1.0").run(once=True)
+
+        self.assertIsNotNone(engine.captured_path)
+        self.assertFalse(engine.captured_path.exists())
+        self.assertEqual([item["type"] for item in api.events], ["status", "final"])
 
     def test_interrupt_is_dispatched_while_primary_turn_is_running(self):
         class StopPolling(RuntimeError):
@@ -382,6 +425,34 @@ class AppServerEngineTests(unittest.TestCase):
             self.assertEqual(turn_params["model"], "gpt-test-codex")
             self.assertEqual(turn_params["effort"], "high")
             self.assertEqual(turn_params["serviceTier"], "fast")
+
+    def test_photo_uses_installed_local_image_turn_input_schema(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            root = directory / "workspace"
+            root.mkdir()
+            photo = directory / "capture.jpg"
+            photo.write_bytes(b"\xff\xd8\xff\xe0photo\xff\xd9")
+            store = ConfigStore(directory / "config")
+            engine = AppServerEngine(ConnectorConfig(allowed_roots=[str(root)]), store)
+            fake = FakeAppServerClient()
+            engine.client = fake
+
+            engine.execute({
+                "job_id": "job-photo",
+                "conversation_id": "conversation-photo",
+                "action": "start",
+                "prompt": "Опиши фотографию",
+                "local_image_path": str(photo),
+            })
+
+            turn_params = next(params for method, params in fake.requests if method == "turn/start")
+            self.assertEqual(turn_params["input"][0], {"type": "text", "text": "Опиши фотографию"})
+            self.assertEqual(turn_params["input"][1], {
+                "type": "localImage",
+                "path": str(photo.resolve()),
+                "detail": "auto",
+            })
 
     def test_steer_uses_expected_active_turn_id_from_installed_schema(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -1,11 +1,16 @@
 package com.rokidhub.nexus.plugin.codex
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Handler
 import android.os.Looper
 import android.view.KeyEvent
 import com.anezium.rokidbus.client.plugin.NexusCard
 import com.anezium.rokidbus.client.plugin.NexusPluginService
 import com.anezium.rokidbus.client.plugin.NexusSdkResult
+import com.anezium.rokidbus.client.plugin.NexusSnapshotCallbacks
+import com.anezium.rokidbus.client.plugin.NexusSnapshotError
+import com.anezium.rokidbus.client.plugin.NexusSnapshotSession
 import com.anezium.rokidbus.client.plugin.NexusSpeechCallbacks
 import com.anezium.rokidbus.client.plugin.NexusSpeechError
 import com.anezium.rokidbus.client.plugin.NexusSpeechSession
@@ -16,15 +21,19 @@ import com.anezium.rokidbus.client.plugin.NexusTtsCallbacks
 import com.anezium.rokidbus.client.plugin.NexusTtsDoneReason
 import com.anezium.rokidbus.client.plugin.NexusTtsSession
 import com.anezium.rokidbus.shared.plugin.NexusInputEvent
+import java.io.ByteArrayOutputStream
+import java.util.concurrent.Executors
 
 class RokidHubCodexPluginService : NexusPluginService() {
     private val main = Handler(Looper.getMainLooper())
     private lateinit var credentials: CredentialStore
     private lateinit var ui: PluginText
     private val api = CodexApi()
+    private val photoExecutor = Executors.newSingleThreadExecutor()
     private var surface: NexusSurfaceSession? = null
     private var speech: NexusSpeechSession? = null
     private var tts: NexusTtsSession? = null
+    private var snapshot: NexusSnapshotSession? = null
     private var surfaceShown = false
     private var generation = 0
     private var submittedFinal = false
@@ -52,11 +61,14 @@ class RokidHubCodexPluginService : NexusPluginService() {
         speech = null
         tts?.close()
         tts = null
+        snapshot?.cancel()
+        snapshot = null
         surface = null
         surfaceShown = false
     }
 
     override fun onDestroy() {
+        photoExecutor.shutdownNow()
         api.close()
         super.onDestroy()
     }
@@ -221,8 +233,90 @@ class RokidHubCodexPluginService : NexusPluginService() {
         val token = credentials.readAccessToken() ?: return beginPairing(current)
         val planned = CodexCommandPlanner.plan(text, credentials.conversationId != null, jobRunning)
         if (planned.action == "select_project") updateProjectName(planned.prompt)
+        if (planned.capturePhoto) {
+            capturePhoto(current, text, planned, token)
+            return
+        }
+        createJob(current, text, planned, token, null)
+    }
+
+    private fun capturePhoto(current: Int, text: String, planned: PlannedJob, token: String) {
+        showWork(
+            ui.text("Делаю фото", "Taking a photo"),
+            listOf(ui.text("Смотри на объект перед собой…", "Look at the subject in front of you…")),
+            ui.text("Фото будет обработано локальным Codex", "The photo will be processed by local Codex"),
+        )
+        var createdSession: NexusSnapshotSession? = null
+        val session = nexusSnapshotSession(object : NexusSnapshotCallbacks {
+            override fun onSnapshotCaptured(jpeg: ByteArray) {
+                if (snapshot === createdSession) snapshot = null
+                if (current != generation) return
+                showWork(
+                    ui.text("Отправляю фото", "Sending photo"),
+                    listOf(ui.text("Подготавливаю защищённое вложение…", "Preparing a secure attachment…")),
+                    ui.text("Фото временно хранится в RokidHub", "The photo is stored briefly in RokidHub"),
+                )
+                photoExecutor.execute {
+                    val prepared = preparePhoto(jpeg)
+                    main.post {
+                        if (current != generation) return@post
+                        if (prepared == null) {
+                            showWork(
+                                ui.text("Фото не готово", "Photo unavailable"),
+                                listOf(ui.text("Не удалось подготовить кадр.", "The captured frame could not be prepared.")),
+                                ui.text("Нажми и повтори", "Press and try again"),
+                            )
+                            return@post
+                        }
+                        api.uploadAttachment(credentials.installationId, token, prepared) { result ->
+                            main.post upload@{
+                                if (current != generation) return@upload
+                                val response = result.getOrNull()
+                                val attachmentId = response?.payload?.optString("attachment_id").orEmpty()
+                                if (response?.successful != true || attachmentId.isBlank()) {
+                                    showWork(
+                                        ui.text("Фото не отправлено", "Photo not sent"),
+                                        listOf(response?.message() ?: ui.text("Нет связи с RokidHub.", "RokidHub is unavailable.")),
+                                        ui.text("Нажми и повтори", "Press and try again"),
+                                    )
+                                    return@upload
+                                }
+                                createJob(current, text, planned, token, attachmentId)
+                            }
+                        }
+                    }
+                }
+            }
+
+            override fun onSnapshotError(error: NexusSnapshotError) {
+                if (snapshot === createdSession) snapshot = null
+                if (current != generation) return
+                val message = when (error) {
+                    NexusSnapshotError.BUSY -> ui.text("Камера уже используется.", "The camera is already in use.")
+                    NexusSnapshotError.LINK_DOWN -> ui.text("Нет связи с очками.", "The glasses are disconnected.")
+                    NexusSnapshotError.TIMEOUT -> ui.text("Камера не ответила вовремя.", "The camera timed out.")
+                    NexusSnapshotError.CANCELLED -> ui.text("Съёмка отменена.", "Capture was cancelled.")
+                    else -> ui.text("Не удалось сделать фото.", "The photo could not be captured.")
+                }
+                showWork(ui.text("Камера недоступна", "Camera unavailable"), listOf(message), ui.text("Нажми и повтори", "Press and try again"))
+            }
+        })
+        createdSession = session
+        snapshot = session
+        if (session == null || session.capture() != NexusSdkResult.SENT) {
+            if (snapshot === session) snapshot = null
+            session?.cancel()
+            showWork(
+                ui.text("Нет доступа к камере", "Camera access required"),
+                listOf(ui.text("Разреши Camera для плагина в Nexus.", "Allow Camera for this plugin in Nexus.")),
+                null,
+            )
+        }
+    }
+
+    private fun createJob(current: Int, text: String, planned: PlannedJob, token: String, attachmentId: String?) {
         showWork(ui.text("Подключаю ПК", "Connecting to PC"), listOf(text.take(240)), null)
-        api.createJob(credentials.installationId, token, planned, credentials.conversationId) { result ->
+        api.createJob(credentials.installationId, token, planned, credentials.conversationId, attachmentId) { result ->
             main.post {
                 if (current != generation) return@post
                 val response = result.getOrNull()
@@ -245,6 +339,41 @@ class RokidHubCodexPluginService : NexusPluginService() {
                 jobRunning = true
                 pollJob(current)
             }
+        }
+    }
+
+    private fun preparePhoto(jpeg: ByteArray): ByteArray? {
+        if (jpeg.isEmpty()) return null
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= PHOTO_LONG_EDGE_PX) sample *= 2
+        var bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            ?: return null
+        try {
+            val longEdge = maxOf(bitmap.width, bitmap.height)
+            if (longEdge > PHOTO_LONG_EDGE_PX) {
+                val scale = PHOTO_LONG_EDGE_PX.toFloat() / longEdge
+                val scaled = Bitmap.createScaledBitmap(bitmap, (bitmap.width * scale).toInt().coerceAtLeast(1), (bitmap.height * scale).toInt().coerceAtLeast(1), true)
+                if (scaled !== bitmap) {
+                    bitmap.recycle()
+                    bitmap = scaled
+                }
+            }
+            repeat(6) {
+                val output = ByteArrayOutputStream()
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, PHOTO_JPEG_QUALITY, output)) return null
+                val content = output.toByteArray()
+                if (content.size <= PHOTO_MAX_BYTES) return content
+                val scaled = Bitmap.createScaledBitmap(bitmap, (bitmap.width * 0.8f).toInt().coerceAtLeast(1), (bitmap.height * 0.8f).toInt().coerceAtLeast(1), true)
+                if (scaled === bitmap) return null
+                bitmap.recycle()
+                bitmap = scaled
+            }
+            return null
+        } finally {
+            bitmap.recycle()
         }
     }
 
@@ -339,5 +468,8 @@ class RokidHubCodexPluginService : NexusPluginService() {
         const val SURFACE_ID = "main"
         const val POLL_INTERVAL_MS = 3_000L
         const val JOB_POLL_INTERVAL_MS = 2_000L
+        const val PHOTO_LONG_EDGE_PX = 2048
+        const val PHOTO_JPEG_QUALITY = 88
+        const val PHOTO_MAX_BYTES = 5 * 1024 * 1024
     }
 }

@@ -2,8 +2,16 @@
 
 ## Unreleased
 
+## 0.6.0-beta.1 — 2026-08-25
+
 - The overview uses a green check and green status text only while the Connector
   process is running; a paired but stopped Connector now uses the neutral palette.
+- Explicit single-frame camera commands can capture a JPEG through Nexus and
+  deliver it once to the leased Connector as a local Codex App Server image.
+- Camera frames are re-encoded without original EXIF, bounded to 5 MiB, verified
+  by SHA-256 and removed from Hub/PC temporary storage after retrieval or expiry.
+- Project-specific voice aliases handle alternative STT spellings without
+  exposing local paths to RokidHub.
 
 ## 0.5.0-beta.1 — 2026-08-25
 

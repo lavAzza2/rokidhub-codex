@@ -11,6 +11,7 @@ import certifi
 
 
 _HTTPS_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+MAX_ATTACHMENT_DOWNLOAD_BYTES = 5 * 1024 * 1024
 
 
 class HubApiError(RuntimeError):
@@ -84,6 +85,29 @@ class HubApi:
 
     def poll_job(self) -> dict[str, Any]:
         return self._request("POST", "/api/v1/desktop/jobs/poll", {})
+
+    def download_attachment(self, job_id: str, lease_id: str) -> bytes:
+        headers = {
+            "Accept": "image/jpeg",
+            "Authorization": f"Bearer {self.token or ''}",
+            "X-RokidHub-Connector-ID": self.connector_id,
+            "X-RokidHub-Lease-ID": lease_id,
+        }
+        request = Request(
+            f"{self.base_url.rstrip('/')}/api/v1/desktop/jobs/{job_id}/attachment",
+            headers=headers,
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=self.timeout_seconds, context=_HTTPS_CONTEXT) as response:  # noqa: S310
+                content = response.read(MAX_ATTACHMENT_DOWNLOAD_BYTES + 1)
+        except HTTPError as exc:
+            raise HubApiError(f"RokidHub не выдал фото: HTTP {exc.code}", exc.code, "attachment_download_failed") from exc
+        except URLError as exc:
+            raise HubApiError(f"Не удалось скачать фото с RokidHub: {exc.reason}") from exc
+        if len(content) > MAX_ATTACHMENT_DOWNLOAD_BYTES:
+            raise HubApiError("Фото превышает локальный лимит 5 МБ", code="attachment_too_large")
+        return content
 
     def publish_event(
         self,

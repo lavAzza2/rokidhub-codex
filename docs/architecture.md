@@ -60,6 +60,7 @@ start, poll and claim routes independently.
 | Codex thread id / turn id | no | yes | no |
 | Opaque `conversation_id` | yes | yes | yes |
 | Voice prompt, bounded status/result text | yes | yes | yes |
+| Explicit camera JPEG | temporary, one-time delivery | temporary during one Codex turn | captured and re-encoded before upload |
 | File patches, command output, secrets | no | local only | no |
 
 The MVP asks Codex for a spoken summary under 700 characters and applies a hard
@@ -101,6 +102,7 @@ Nexus Codex plugin:
 - `POST /api/v1/nexus/codex/pairing/start`
 - `POST /api/v1/nexus/codex/pairing/poll`
 - `POST /api/v1/nexus/codex/status`
+- `POST /api/v1/nexus/codex/attachments` (`image/jpeg`, max 5 MiB)
 - `POST /api/v1/nexus/codex/jobs`
 - `GET /api/v1/nexus/codex/jobs/{job_id}?after_sequence=N`
 
@@ -113,6 +115,7 @@ Desktop Connector:
 - `POST /api/v1/desktop/pairing/poll`
 - `POST /api/v1/desktop/status`
 - `POST /api/v1/desktop/jobs/poll`
+- `GET /api/v1/desktop/jobs/{job_id}/attachment`
 - `POST /api/v1/desktop/jobs/{job_id}/events`
 
 Authenticated calls use `Authorization: Bearer …` and
@@ -124,8 +127,9 @@ same user. The response does not expose the Nexus installation id, token or any
 Yandex plugin state. Before the PC is paired, the Connector cannot determine a
 user-scoped glasses status and must display it as unknown.
 
-A polled job contains `job_id`, `conversation_id`, `action`, `prompt` and a
-short-lived `lease_id`. Event bodies contain:
+A polled job contains `job_id`, `conversation_id`, `action`, `prompt`, a
+short-lived `lease_id` and optional attachment metadata. The attachment download
+also requires the current lease in `X-RokidHub-Lease-ID`. Event bodies contain:
 
 ```json
 {
@@ -191,19 +195,25 @@ same connector credential over `wss://`, Hub can push `job.available`; Connector
 then acknowledges the job lease and publishes the same sequenced events. HTTPS
 poll remains a recovery path. No app-server socket is exposed to Hub or the LAN.
 
-## Planned camera attachment slice
+## Camera attachment slice
 
-Photo input is the next media vertical slice, not part of the current text-only
-MVP. A voice command will ask the Nexus plugin to capture a photo on the glasses,
-show an explicit HUD confirmation, and upload one bounded JPEG attachment over
-the Nexus-authenticated HTTPS channel. Hub will bind the upload to the same user,
-installation and job, enforce content type and size limits, and expose a
-short-lived one-time download only to that user's selected Desktop Connector.
+Photo input is an explicit, single-frame flow. Phrases such as «сделай фото и
+опиши, что передо мной» or “take a photo and inspect it” request a Nexus camera
+snapshot. A generic phrase containing the word «фото» does not silently enable
+the camera. Nexus shows `Делаю фото` and `Отправляю фото` in the HUD.
 
-The Connector will download the image to a private temporary directory, verify
-its declared type and actual bytes, pass the local image reference through the
-installed Codex App Server schema, and delete the temporary file after the turn.
-Hub must delete the encrypted-at-rest object after successful retrieval or a
-short expiry. Photos never become public URLs; EXIF metadata should be stripped
-on-device where supported. Camera permission, capture and sending remain an
-explicit user-visible action, and automatic/background capture is out of scope.
+The plugin downsizes the image to at most 2048 pixels on its long edge and
+re-encodes it as JPEG (max 5 MiB), which also removes original EXIF metadata. It
+uploads the frame over the Nexus-authenticated HTTPS channel, then references
+the returned `attachment_id` when creating a job. Hub binds the upload to the
+same user, Nexus installation and job. An unattached upload expires after 10
+minutes; an attached frame after 30 minutes. The selected Connector can download
+it once using its bearer token and the current job lease; successful download or
+expiry clears the stored bytes. Photos never receive public URLs.
+
+The Connector verifies MIME type, declared length, JPEG markers and SHA-256,
+writes the frame to a private temporary directory and passes the exact installed
+App Server input `{type: "localImage", path: ..., detail: "auto"}` alongside the
+text prompt. The temporary file is removed after the turn, including error paths.
+Automatic/background capture, gallery selection, video and multiple frames are
+out of scope for this slice.

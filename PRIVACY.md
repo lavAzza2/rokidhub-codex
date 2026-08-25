@@ -15,5 +15,13 @@ token is protected with Windows DPAPI for the current Windows user. The Connecto
 opens outbound HTTPS requests only and does not expose Codex App Server to the
 LAN or internet.
 
+When you explicitly say a camera command, the Nexus plugin captures one frame,
+removes the original metadata by re-encoding it, and sends a JPEG of at most
+5 MiB through RokidHub. The frame is scoped to your Nexus installation, job and
+selected PC, has no public URL, and can be downloaded once by the current job
+lease. RokidHub clears the bytes after that download or their short expiry; the
+Connector deletes its local temporary copy after the Codex turn. Background or
+silent capture is not supported.
+
 Do not include secrets in spoken prompts. Server-side retention and account
 deletion are governed by the RokidHub privacy terms shown on rokidhub.com.
