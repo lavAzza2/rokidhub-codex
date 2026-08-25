@@ -22,6 +22,11 @@ def is_local_hub_url(value: str) -> bool:
     return parsed.hostname in {"127.0.0.1", "localhost", "::1"}
 
 
+def _path_key(value: str | Path) -> str:
+    """Canonical comparison key, including Windows short/long temp paths."""
+    return os.path.normcase(str(Path(value).expanduser().resolve(strict=False)))
+
+
 def default_config_dir() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
@@ -72,11 +77,11 @@ class ConnectorConfig:
             raise ValueError("Неизвестный профиль доступа")
         if self.language not in LANGUAGE_PREFERENCES:
             raise ValueError("Неизвестный язык интерфейса")
-        allowed = {str(Path(item)).casefold() for item in self.allowed_roots}
-        if self.default_root and str(Path(self.default_root)).casefold() not in allowed:
+        allowed = {_path_key(item) for item in self.allowed_roots}
+        if self.default_root and _path_key(self.default_root) not in allowed:
             raise ValueError("Папка по умолчанию должна быть в списке разрешённых проектов")
         for path, alias in self.project_aliases.items():
-            if str(Path(path)).casefold() not in allowed:
+            if _path_key(path) not in allowed:
                 raise ValueError("Голосовое имя задано для неразрешённой папки")
             clean = alias.strip()
             if not clean or len(clean) > 80:
@@ -104,7 +109,7 @@ class ConnectorConfig:
             raise RuntimeError("Сначала явно добавь хотя бы одну разрешённую папку через configure --allow-root")
         selected = self.default_root or self.allowed_roots[0]
         matching = next(
-            (item for item in self.allowed_roots if str(Path(item)).casefold() == str(Path(selected)).casefold()),
+            (item for item in self.allowed_roots if _path_key(item) == _path_key(selected)),
             None,
         )
         if matching is None:
@@ -116,8 +121,9 @@ class ConnectorConfig:
 
     def project_alias(self, root: str | Path) -> str:
         path = str(Path(root))
+        path_key = _path_key(path)
         configured = next(
-            (alias for key, alias in self.project_aliases.items() if key.casefold() == path.casefold()),
+            (alias for key, alias in self.project_aliases.items() if _path_key(key) == path_key),
             "",
         )
         return configured.strip() or Path(path).name

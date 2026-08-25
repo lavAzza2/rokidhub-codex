@@ -446,10 +446,22 @@ class AppServerEngineTests(unittest.TestCase):
 
     @unittest.skipUnless(os.name == "nt", "Windows executable resolution only")
     def test_codex_npm_shim_resolves_to_executable_without_shell(self):
-        resolved = _resolve_subprocess_command(["codex", "app-server"])
-        self.assertTrue(resolved[0].casefold().endswith(".exe"))
-        self.assertEqual(resolved[-1], "app-server")
-        self.assertFalse(any(item.casefold().endswith((".cmd", ".bat", ".ps1")) for item in resolved))
+        with tempfile.TemporaryDirectory() as temporary:
+            npm = Path(temporary)
+            shim = npm / "codex.cmd"
+            node = npm / "node.exe"
+            script = npm / "node_modules" / "@openai" / "codex" / "bin" / "codex.js"
+            script.parent.mkdir(parents=True)
+            shim.touch()
+            node.touch()
+            script.touch()
+            with patch("rokidhub_desktop_connector.app_server.shutil.which", return_value=str(shim)):
+                resolved = _resolve_subprocess_command(["codex", "app-server"])
+
+            self.assertEqual(resolved[0], str(node))
+            self.assertEqual(resolved[1], str(script))
+            self.assertEqual(resolved[-1], "app-server")
+            self.assertFalse(any(item.casefold().endswith((".cmd", ".bat", ".ps1")) for item in resolved))
 
 
 if __name__ == "__main__":
