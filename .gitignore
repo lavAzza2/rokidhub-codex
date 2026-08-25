@@ -7,6 +7,7 @@ local.properties
 connector-token*.dpapi
 config.json
 .release-smoke/
+.release-assets/
 
 # Python / Windows build
 **/.venv/
