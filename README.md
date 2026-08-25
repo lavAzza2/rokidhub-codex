@@ -1,5 +1,8 @@
 # RokidHub · Codex
 
+Подробное описание установки, привязки, безопасности и голосового управления:
+**[руководство со скриншотами](docs/guide-ru.md)**.
+
 Public beta integration for running local Codex tasks from Rokid RV101 glasses:
 
 ```text
