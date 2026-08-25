@@ -4,7 +4,7 @@ import codecs
 import sys
 import threading
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QAction, QActionGroup, QCloseEvent, QDesktopServices, QIcon, QPixmap
@@ -61,6 +61,40 @@ EFFORT_KEYS = {
     "max": "analysis_max",
     "ultra": "analysis_ultra",
 }
+
+
+class HeroStatusAppearance(NamedTuple):
+    title_key: str
+    detail_key: str
+    icon_name: str
+    icon_color: str
+    detail_color: str
+
+
+def hero_status_appearance(
+    *,
+    running: bool,
+    paired: bool,
+    local_hub: bool,
+    token_for_current_hub: bool,
+) -> HeroStatusAppearance:
+    if local_hub and paired:
+        return HeroStatusAppearance(
+            "pc_local_test", "local_hub_not_production", "warning", "#e8b63e", "#f1cb66"
+        )
+    if paired and not token_for_current_hub:
+        return HeroStatusAppearance(
+            "pair_required", "hub_changed_pair_hint", "warning", "#e8b63e", "#f1cb66"
+        )
+    if running:
+        return HeroStatusAppearance(
+            "pc_connected", "connector_running", "check-circle", "#62f238", "#72f04c"
+        )
+    if token_for_current_hub:
+        return HeroStatusAppearance(
+            "pc_paired", "connector_stopped", "power-off", "#899089", "#a8aea7"
+        )
+    return HeroStatusAppearance("pair_required", "pair_hint", "warning", "#e8b63e", "#f1cb66")
 
 
 def effort_label(value: str, description: str = "", language: str = "ru") -> str:
@@ -208,7 +242,7 @@ class ConnectorWindow(QMainWindow):
             QLabel#pageTitle { font-size: 30px; font-weight: 700; color: #ffffff; }
             QLabel#pageIntro, QLabel#muted { color: #9da39c; }
             QLabel#statusTitle { font-size: 34px; font-weight: 750; color: #ffffff; }
-            QLabel#statusDetail { font-size: 19px; font-weight: 650; color: #72f04c; }
+            QLabel#statusDetail { font-size: 19px; font-weight: 650; }
             QLabel#sectionTitle { font-size: 17px; font-weight: 700; color: #ffffff; }
             QLabel#fieldTitle { color: #a8aea7; font-size: 13px; font-weight: 600; }
             QLabel#pairingCode { color: #ffffff; font-size: 27px; font-weight: 750; letter-spacing: 2px; }
@@ -1194,19 +1228,16 @@ class ConnectorWindow(QMainWindow):
         local_hub = is_local_hub_url(self.config.hub_url)
         paired_hub = normalize_hub_url(self.config.paired_hub_url)
         token_for_current_hub = paired and (not paired_hub or paired_hub.casefold() == normalize_hub_url(self.config.hub_url).casefold())
-        if local_hub and paired:
-            title_key, detail_key, icon_name, color = "pc_local_test", "local_hub_not_production", "warning", "#e8b63e"
-        elif paired and not token_for_current_hub:
-            title_key, detail_key, icon_name, color = "pair_required", "hub_changed_pair_hint", "warning", "#e8b63e"
-        elif running:
-            title_key, detail_key, icon_name, color = "pc_connected", "connector_running", "check-circle", "#62f238"
-        elif token_for_current_hub:
-            title_key, detail_key, icon_name, color = "pc_paired", "connector_stopped", "check-circle", "#62f238"
-        else:
-            title_key, detail_key, icon_name, color = "pair_required", "pair_hint", "warning", "#e8b63e"
-        self.status_title.setText(self._t(title_key))
-        self.status_detail.setText(self._t(detail_key))
-        self.status_icon.setPixmap(self.icons.pixmap(icon_name, color, canvas=88))
+        appearance = hero_status_appearance(
+            running=running,
+            paired=paired,
+            local_hub=local_hub,
+            token_for_current_hub=token_for_current_hub,
+        )
+        self.status_title.setText(self._t(appearance.title_key))
+        self.status_detail.setText(self._t(appearance.detail_key))
+        self.status_detail.setStyleSheet(f"color: {appearance.detail_color};")
+        self.status_icon.setPixmap(self.icons.pixmap(appearance.icon_name, appearance.icon_color, canvas=88))
         self.start_button.setEnabled(not busy)
         self.pair_button.setEnabled(not busy)
         self.stop_button.setEnabled(busy)

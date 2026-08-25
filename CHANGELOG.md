@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- The overview uses a green check and green status text only while the Connector
+  process is running; a paired but stopped Connector now uses the neutral palette.
+
 ## 0.5.0-beta.1 — 2026-08-25
 
 - First public vertical-slice release.

@@ -13,7 +13,13 @@ from rokidhub_desktop_connector.app_server import AppServerEngine, _bounded_summ
 from rokidhub_desktop_connector.approval import LocalApprovalHandler
 from rokidhub_desktop_connector.autostart import build_autostart_command
 from rokidhub_desktop_connector.config import ConfigStore, ConnectorConfig, is_local_hub_url
-from rokidhub_desktop_connector.gui import Utf8LogDecoder, effort_label, pairing_code_from_line, utf8_process_environment
+from rokidhub_desktop_connector.gui import (
+    Utf8LogDecoder,
+    effort_label,
+    hero_status_appearance,
+    pairing_code_from_line,
+    utf8_process_environment,
+)
 from rokidhub_desktop_connector.i18n import Translator, detect_system_language, resolve_language
 from rokidhub_desktop_connector.runner import ConnectorService, MockEngine
 from rokidhub_desktop_connector.token_store import DpapiTokenStore
@@ -85,6 +91,25 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(effort_label("low"), "Быстро · low")
         self.assertEqual(effort_label("low", language="en"), "Fast · low")
         self.assertEqual(effort_label("custom"), "custom")
+
+    def test_green_check_is_reserved_for_a_running_connector(self):
+        stopped = hero_status_appearance(
+            running=False,
+            paired=True,
+            local_hub=False,
+            token_for_current_hub=True,
+        )
+        running = hero_status_appearance(
+            running=True,
+            paired=True,
+            local_hub=False,
+            token_for_current_hub=True,
+        )
+
+        self.assertEqual((stopped.icon_name, stopped.icon_color), ("power-off", "#899089"))
+        self.assertNotEqual(stopped.detail_color, "#72f04c")
+        self.assertEqual((running.icon_name, running.icon_color), ("check-circle", "#62f238"))
+        self.assertEqual(running.detail_color, "#72f04c")
 
     def test_language_auto_detection_and_manual_override(self):
         self.assertEqual(detect_system_language("ru-RU"), "ru")

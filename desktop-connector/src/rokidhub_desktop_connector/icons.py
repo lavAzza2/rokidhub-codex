@@ -16,6 +16,7 @@ GLYPHS = {
     "settings": "\uf013",
     "play": "\uf04b",
     "stop": "\uf04d",
+    "power-off": "\uf011",
     "check-circle": "\uf05d",
     "warning": "\uf071",
     "info": "\uf05a",
