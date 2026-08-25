@@ -18,6 +18,12 @@ class CodexCommandPlannerTest {
         assertEquals("рокид", planned.prompt)
     }
 
+    @Test fun shortVoiceCommandCanSelectProject() {
+        val planned = CodexCommandPlanner.plan("Проект RokidCodex", true, false)
+        assertEquals("select_project", planned.action)
+        assertEquals("rokidcodex", planned.prompt)
+    }
+
     @Test fun englishVoiceCanSelectProject() {
         val planned = CodexCommandPlanner.plan("Select project Rokid", true, false)
         assertEquals("select_project", planned.action)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import re
 import sys
 import threading
 from pathlib import Path
@@ -752,7 +753,8 @@ class ConnectorWindow(QMainWindow):
                 item.setSizeHint(QSize(0, 54))
                 self.project_list.addItem(item)
                 radio = ProjectRadioButton(f"{self.config.project_alias(path)}  ·  {path}", self.icons)
-                radio.setToolTip(self._t("default_project_action"))
+                aliases = ", ".join(self.config.project_voice_aliases(path))
+                radio.setToolTip(f"{self._t('default_project_action')}\n{self._t('voice_prefix', alias=aliases)}")
                 radio.setChecked(path.casefold() == default_path.casefold())
                 radio.toggled.connect(
                     lambda checked, project=path, row=index: self._default_project_toggled(checked, project, row)
@@ -800,7 +802,7 @@ class ConnectorWindow(QMainWindow):
         self._set_default_project(self.folder_paths[index])
 
     def _update_voice_alias(self) -> None:
-        alias = self.config.project_alias(self._default_project_path()) if self.folder_paths else "—"
+        alias = ", ".join(self.config.project_voice_aliases(self._default_project_path())) if self.folder_paths else "—"
         self.voice_alias_label.setText(self._t("voice_prefix", alias=alias))
 
     def _default_project_path(self) -> str:
@@ -913,21 +915,20 @@ class ConnectorWindow(QMainWindow):
             QMessageBox.information(self, self._t("alias_title"), self._t("select_project_first"))
             return
         path = self.folder_paths[index]
-        alias, accepted = QInputDialog.getText(
+        aliases_text, accepted = QInputDialog.getMultiLineText(
             self,
             self._t("alias_title"),
             self._t("alias_prompt"),
-            QLineEdit.EchoMode.Normal,
-            self.config.project_alias(path),
+            "\n".join(self.config.project_voice_aliases(path)),
         )
         if not accepted:
             return
-        clean = " ".join(alias.strip().split())
-        if not clean or len(clean) > 80:
+        aliases = [" ".join(item.strip().split()) for item in re.split(r"[,;\n]+", aliases_text) if item.strip()]
+        if not aliases or len(aliases) > 12 or any(len(alias) > 80 for alias in aliases):
             self._show_error(self._t("alias_invalid"))
             return
         previous = self.config.project_aliases.get(path)
-        self.config.project_aliases[path] = clean
+        self.config.project_aliases[path] = aliases
         try:
             self.config.allowed_roots = list(self.folder_paths)
             self.config.validate()

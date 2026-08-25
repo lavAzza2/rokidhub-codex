@@ -190,3 +190,20 @@ The Connector will still open the connection outbound. After authenticating the
 same connector credential over `wss://`, Hub can push `job.available`; Connector
 then acknowledges the job lease and publishes the same sequenced events. HTTPS
 poll remains a recovery path. No app-server socket is exposed to Hub or the LAN.
+
+## Planned camera attachment slice
+
+Photo input is the next media vertical slice, not part of the current text-only
+MVP. A voice command will ask the Nexus plugin to capture a photo on the glasses,
+show an explicit HUD confirmation, and upload one bounded JPEG attachment over
+the Nexus-authenticated HTTPS channel. Hub will bind the upload to the same user,
+installation and job, enforce content type and size limits, and expose a
+short-lived one-time download only to that user's selected Desktop Connector.
+
+The Connector will download the image to a private temporary directory, verify
+its declared type and actual bytes, pass the local image reference through the
+installed Codex App Server schema, and delete the temporary file after the turn.
+Hub must delete the encrypted-at-rest object after successful retrieval or a
+short expiry. Photos never become public URLs; EXIF metadata should be stripped
+on-device where supported. Camera permission, capture and sending remain an
+explicit user-visible action, and automatic/background capture is out of scope.

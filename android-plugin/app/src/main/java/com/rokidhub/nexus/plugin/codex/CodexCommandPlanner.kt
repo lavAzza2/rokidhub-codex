@@ -30,10 +30,12 @@ object CodexCommandPlanner {
 
     private fun projectName(normalized: String): String? {
         val prefixes = listOf(
+            "проект ",
             "выбери проект ",
             "открой проект ",
             "переключись на проект ",
             "переключи на проект ",
+            "project ",
             "select project ",
             "open project ",
             "switch to project ",

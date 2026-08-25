@@ -4,6 +4,7 @@ import json
 import os
 import socket
 import uuid
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from urllib.parse import urlparse
@@ -49,7 +50,7 @@ class ConnectorConfig:
     service_tier: str = ""
     mock_mode: bool = False
     access_mode: str = "read_only"
-    project_aliases: dict[str, str] = field(default_factory=dict)
+    project_aliases: dict[str, list[str]] = field(default_factory=dict)
     conversation_roots: dict[str, str] = field(default_factory=dict)
     language: str = "auto"
 
@@ -80,18 +81,24 @@ class ConnectorConfig:
         allowed = {_path_key(item) for item in self.allowed_roots}
         if self.default_root and _path_key(self.default_root) not in allowed:
             raise ValueError("Папка по умолчанию должна быть в списке разрешённых проектов")
-        for path, alias in self.project_aliases.items():
+        for path, aliases_value in list(self.project_aliases.items()):
             if _path_key(path) not in allowed:
                 raise ValueError("Голосовое имя задано для неразрешённой папки")
-            clean = alias.strip()
-            if not clean or len(clean) > 80:
-                raise ValueError("Голосовое имя проекта должно содержать от 1 до 80 символов")
-        aliases: set[str] = set()
+            aliases = _alias_list(aliases_value)
+            if not aliases or len(aliases) > 12:
+                raise ValueError("Для проекта нужно задать от 1 до 12 голосовых имён")
+            if any(len(alias) > 80 for alias in aliases):
+                raise ValueError("Каждое голосовое имя должно содержать не более 80 символов")
+            self.project_aliases[path] = aliases
+        alias_owners: dict[str, str] = {}
         for path in self.allowed_roots:
-            normalized = _normalize_project_name(self.project_alias(path))
-            if normalized in aliases:
-                raise ValueError("Голосовые имена проектов должны быть уникальными")
-            aliases.add(normalized)
+            owner = _path_key(path)
+            for alias in self.project_voice_aliases(path):
+                normalized = _normalize_project_name(alias)
+                previous_owner = alias_owners.get(normalized)
+                if previous_owner is not None and previous_owner != owner:
+                    raise ValueError("Голосовые имена разных проектов должны быть уникальными")
+                alias_owners[normalized] = owner
 
     def add_allowed_root(self, value: str) -> Path:
         root = Path(value).expanduser().resolve(strict=True)
@@ -120,13 +127,20 @@ class ConnectorConfig:
         return root
 
     def project_alias(self, root: str | Path) -> str:
+        return self.project_voice_aliases(root)[0]
+
+    def project_voice_aliases(self, root: str | Path) -> list[str]:
         path = str(Path(root))
         path_key = _path_key(path)
         configured = next(
-            (alias for key, alias in self.project_aliases.items() if _path_key(key) == path_key),
-            "",
+            (_alias_list(aliases) for key, aliases in self.project_aliases.items() if _path_key(key) == path_key),
+            [],
         )
-        return configured.strip() or Path(path).name
+        aliases = list(configured)
+        folder_name = Path(path).name
+        if folder_name.casefold() not in {alias.casefold() for alias in aliases}:
+            aliases.append(folder_name)
+        return aliases or [folder_name]
 
     def resolve_allowed_project(self, spoken_name: str) -> Path:
         wanted = _normalize_project_name(spoken_name)
@@ -135,14 +149,24 @@ class ConnectorConfig:
         projects: list[tuple[Path, str]] = []
         for value in self.allowed_roots:
             path = Path(value).resolve(strict=True)
-            projects.append((path, _normalize_project_name(self.project_alias(path))))
-        exact = [path for path, alias in projects if alias == wanted]
+            projects.extend((path, _normalize_project_name(alias)) for alias in self.project_voice_aliases(path))
+        exact = _unique_paths(path for path, alias in projects if alias == wanted)
         if len(exact) == 1:
             return exact[0]
-        partial = [path for path, alias in projects if wanted in alias or alias in wanted]
+        partial = _unique_paths(path for path, alias in projects if wanted in alias or alias in wanted)
         if len(partial) == 1:
             return partial[0]
-        available = ", ".join(self.project_alias(path) for path, _alias in projects)
+        # STT often distorts product names by one or two sounds (for example,
+        # "Rokid" -> "Рокет"). Only accept one unambiguous close match and
+        # keep short names strict so a similar alias cannot select a wrong root.
+        fuzzy = _unique_paths(
+            path
+            for path, alias in projects
+            if min(len(wanted), len(alias)) >= 6 and _edit_distance(wanted, alias) <= 2
+        )
+        if len(fuzzy) == 1:
+            return fuzzy[0]
+        available = ", ".join(self.project_alias(path) for path in _unique_paths(path for path, _alias in projects))
         if len(partial) > 1:
             raise ValueError(f"Название неоднозначно. Доступны: {available}")
         raise ValueError(f"Проект не найден. Доступны: {available}")
@@ -173,7 +197,7 @@ class ConfigStore:
             service_tier=str(payload.get("service_tier", "")),
             mock_mode=bool(payload.get("mock_mode", False)),
             access_mode=str(payload.get("access_mode", "read_only")),
-            project_aliases={str(key): str(value) for key, value in payload.get("project_aliases", {}).items()},
+            project_aliases={str(key): _alias_list(value) for key, value in payload.get("project_aliases", {}).items()},
             conversation_roots={str(key): str(value) for key, value in payload.get("conversation_roots", {}).items()},
             language=str(payload.get("language", "auto")),
         )
@@ -197,4 +221,46 @@ def _normalize_project_name(value: str) -> str:
         "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
     }
     converted = "".join(transliteration.get(char, char) for char in value.strip().casefold())
-    return "".join(char for char in converted if char.isalnum())
+    normalized = "".join(char for char in converted if char.isalnum())
+    # Common Russian STT renderings of the product names. Canonicalizing the
+    # words is safer than raising the global fuzzy threshold for every project.
+    return normalized.replace("rocket", "rokid").replace("roket", "rokid").replace("kodeks", "codex")
+
+
+def _alias_list(value: object) -> list[str]:
+    values = value if isinstance(value, list) else [value]
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for item in values:
+        clean = " ".join(str(item).strip().split())
+        key = clean.casefold()
+        if clean and key not in seen:
+            aliases.append(clean)
+            seen.add(key)
+    return aliases
+
+
+def _unique_paths(values: Iterable[str | Path]) -> list[Path]:
+    result: list[Path] = []
+    seen: set[str] = set()
+    for value in values:
+        path = Path(value)
+        key = _path_key(path)
+        if key not in seen:
+            result.append(path)
+            seen.add(key)
+    return result
+
+
+def _edit_distance(left: str, right: str) -> int:
+    previous = list(range(len(right) + 1))
+    for left_index, left_char in enumerate(left, start=1):
+        current = [left_index]
+        for right_index, right_char in enumerate(right, start=1):
+            current.append(min(
+                current[-1] + 1,
+                previous[right_index] + 1,
+                previous[right_index - 1] + (left_char != right_char),
+            ))
+        previous = current
+    return previous[-1]

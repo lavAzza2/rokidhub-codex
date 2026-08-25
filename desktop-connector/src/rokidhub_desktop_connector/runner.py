@@ -85,7 +85,12 @@ class ConnectorService:
         try:
             project_name = _engine_project_name(self.engine, job)
         except Exception as exc:
-            print(f"Job {job_id} project resolution failed locally: {type(exc).__name__}: {exc}", file=sys.stderr)
+            spoken_project = str(job.get("prompt", "")).strip()
+            print(
+                f"Job {job_id} project resolution failed locally: "
+                f"prompt={spoken_project!r}; {type(exc).__name__}: {exc}",
+                file=sys.stderr,
+            )
             self.api.publish_event(
                 job_id,
                 lease_id,

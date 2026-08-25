@@ -62,6 +62,7 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(loaded.mock_mode)
             self.assertEqual(loaded.access_mode, "ask")
             self.assertEqual(loaded.project_alias(root), "Рокид")
+            self.assertEqual(loaded.project_voice_aliases(root), ["Рокид", "workspace"])
             self.assertEqual(loaded.resolve_allowed_project("рокид"), root.resolve())
             self.assertEqual(loaded.conversation_roots["conversation"], str(root.resolve()))
             self.assertEqual(loaded.language, "en")
@@ -147,6 +148,31 @@ class ConfigTests(unittest.TestCase):
             project.mkdir()
             config = ConnectorConfig(hub_url="http://127.0.0.1:8000", allowed_roots=[str(project)])
             self.assertEqual(config.resolve_allowed_project("Рокид Глассес"), project.resolve())
+
+    def test_speech_distortion_can_match_one_unambiguous_project(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "RokidCodex"
+            project.mkdir()
+            config = ConnectorConfig(allowed_roots=[str(project)])
+            self.assertEqual(config.resolve_allowed_project("Рокет Codex"), project.resolve())
+            self.assertEqual(config.resolve_allowed_project("Рокет кодекс"), project.resolve())
+            self.assertEqual(config.resolve_allowed_project("Rocket Codex"), project.resolve())
+
+    def test_user_can_configure_multiple_voice_aliases_for_a_project(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "client-backend"
+            project.mkdir()
+            config = ConnectorConfig(
+                allowed_roots=[str(project)],
+                project_aliases={str(project): ["Клиент", "Сервер клиента", "Client API"]},
+            )
+
+            config.validate()
+
+            self.assertEqual(config.project_alias(project), "Клиент")
+            self.assertEqual(config.resolve_allowed_project("сервер клиента"), project.resolve())
+            self.assertEqual(config.resolve_allowed_project("client api"), project.resolve())
+            self.assertEqual(config.resolve_allowed_project("client-backend"), project.resolve())
 
     def test_explicit_default_root_does_not_reorder_allowed_projects(self):
         with tempfile.TemporaryDirectory() as temporary:
