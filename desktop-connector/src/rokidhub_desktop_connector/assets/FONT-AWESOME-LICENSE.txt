@@ -1,0 +1,10 @@
+Font Awesome 4.0.3 by Dave Gandy
+https://fontawesome.com/v4/
+
+The Font Awesome font is licensed under the SIL Open Font License 1.1.
+https://scripts.sil.org/OFL
+
+The icon names and private-use codepoints in this package are derived from the
+official Font Awesome 4.0.3 CSS, which is licensed under the MIT License.
+
+The font is bundled only to render the RokidHub Desktop Connector interface.

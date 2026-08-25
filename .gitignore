@@ -1,0 +1,30 @@
+# Local secrets and runtime state
+.env
+*.jks
+*.keystore
+signing.properties
+local.properties
+connector-token*.dpapi
+config.json
+.release-smoke/
+
+# Python / Windows build
+**/.venv/
+**/__pycache__/
+**/.pytest_cache/
+**/*.egg-info/
+**/build/
+**/dist/
+*.py[cod]
+*.spec
+
+# Android build
+**/.gradle/
+**/.kotlin/
+**/app/build/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

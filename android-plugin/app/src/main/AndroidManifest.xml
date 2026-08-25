@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <queries>
+        <intent><action android:name="com.anezium.rokidbus.action.HUB" /></intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:label="RokidHub · Codex"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="${usesCleartextTraffic}">
+        <service
+            android:name=".RokidHubCodexPluginService"
+            android:exported="true"
+            android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" android:value="glasses-session" />
+            <intent-filter><action android:name="com.anezium.rokidbus.action.PLUGIN" /></intent-filter>
+            <meta-data android:name="com.anezium.rokidbus.plugin.ID" android:value="rokidhub.codex" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.DISPLAY_NAME" android:value="RokidHub · Codex" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.ICON" android:value="terminal" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.API_VERSION" android:value="3" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.CAPABILITIES" android:value="surfaces,stt,tts" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.RECEIVE_PREFIXES" android:value="/plugin/rokidhub.codex,/system/plugin,/stt,/tts/started,/tts/done" />
+            <meta-data android:name="com.anezium.rokidbus.plugin.LAUNCHABLE" android:value="true" />
+        </service>
+    </application>
+</manifest>
