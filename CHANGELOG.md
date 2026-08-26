@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.6.0-beta.3 — 2026-08-26
+
+- The Overview page now presents the active access policy as a compact summary
+  that opens Security; the policy selector and full-access confirmation live in
+  Security only.
+
 ## 0.6.0-beta.2 — 2026-08-26
 
 - Explicit project voice aliases are now authoritative: after the user removes

@@ -262,6 +262,9 @@ class ConnectorWindow(QMainWindow):
             QPushButton#connectionCard[state="good"] { border-color: #35632f; color: #8ef774; }
             QPushButton#connectionCard[state="warning"] { border-color: #67572e; color: #f1cb66; }
             QPushButton#connectionCard[state="muted"] { color: #a0a7a0; }
+            QPushButton#overviewSummary { background: #0b0e0c; border: 1px solid #303631; border-radius: 7px;
+                color: #d8ddd7; padding: 9px 12px; text-align: left; }
+            QPushButton#overviewSummary:hover { background: #121713; border-color: #596159; color: #ffffff; }
             QComboBox, QLineEdit { background: #0d100e; border: 1px solid #303531; border-radius: 7px;
                 padding: 9px 11px; min-height: 20px; selection-background-color: #315e2b; }
             QComboBox:hover, QLineEdit:hover { border-color: #505851; }
@@ -453,10 +456,12 @@ class ConnectorWindow(QMainWindow):
         grid.addWidget(self.access_title, 0, 1)
         self.project_combo = QComboBox()
         self.project_combo.currentIndexChanged.connect(self._overview_project_changed)
-        self.overview_access_combo = QComboBox()
-        self.overview_access_combo.currentIndexChanged.connect(lambda: self._access_changed(self.overview_access_combo))
+        self.overview_access_button = QPushButton()
+        self.overview_access_button.setObjectName("overviewSummary")
+        self.overview_access_button.setIcon(self.icons.icon("shield", "#62f238"))
+        self.overview_access_button.clicked.connect(self._show_security)
         grid.addWidget(self.project_combo, 1, 0)
-        grid.addWidget(self.overview_access_combo, 1, 1)
+        grid.addWidget(self.overview_access_button, 1, 1)
         self.voice_alias_title = self._field_title()
         grid.addWidget(self.voice_alias_title, 2, 0)
         self.voice_alias_label = QLabel()
@@ -833,12 +838,11 @@ class ConnectorWindow(QMainWindow):
     def _refresh_access_combos(self) -> None:
         self._syncing = True
         try:
-            for combo in (self.overview_access_combo, self.security_access_combo):
-                combo.clear()
-                for mode, key in ACCESS_KEYS.items():
-                    combo.addItem(self._t(key), mode)
-                    if mode == self.config.access_mode:
-                        combo.setCurrentIndex(combo.count() - 1)
+            self.security_access_combo.clear()
+            for mode, key in ACCESS_KEYS.items():
+                self.security_access_combo.addItem(self._t(key), mode)
+                if mode == self.config.access_mode:
+                    self.security_access_combo.setCurrentIndex(self.security_access_combo.count() - 1)
         finally:
             self._syncing = False
         self._update_security_text()
@@ -875,6 +879,7 @@ class ConnectorWindow(QMainWindow):
             "full_project": "security_full",
         }[self.config.access_mode]
         text = self._t(key)
+        self.overview_access_button.setText(self._t(ACCESS_KEYS[self.config.access_mode]))
         self.overview_security_label.setText(text)
         self.security_description.setText(text)
         if hasattr(self, "activity_preview") and not self._log_started:
@@ -1250,6 +1255,9 @@ class ConnectorWindow(QMainWindow):
 
     def _show_settings(self) -> None:
         self._nav_buttons["settings"].click()
+
+    def _show_security(self) -> None:
+        self._nav_buttons["security"].click()
 
     def _open_hub_dashboard(self) -> None:
         QDesktopServices.openUrl(QUrl(f"{self.config.hub_url.rstrip('/')}/dashboard/"))
