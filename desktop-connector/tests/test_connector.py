@@ -63,7 +63,7 @@ class ConfigTests(unittest.TestCase):
             self.assertTrue(loaded.mock_mode)
             self.assertEqual(loaded.access_mode, "ask")
             self.assertEqual(loaded.project_alias(root), "Рокид")
-            self.assertEqual(loaded.project_voice_aliases(root), ["Рокид", "workspace"])
+            self.assertEqual(loaded.project_voice_aliases(root), ["Рокид"])
             self.assertEqual(loaded.resolve_allowed_project("рокид"), root.resolve())
             self.assertEqual(loaded.conversation_roots["conversation"], str(root.resolve()))
             self.assertEqual(loaded.language, "en")
@@ -173,7 +173,21 @@ class ConfigTests(unittest.TestCase):
             self.assertEqual(config.project_alias(project), "Клиент")
             self.assertEqual(config.resolve_allowed_project("сервер клиента"), project.resolve())
             self.assertEqual(config.resolve_allowed_project("client api"), project.resolve())
-            self.assertEqual(config.resolve_allowed_project("client-backend"), project.resolve())
+            with self.assertRaises(ValueError):
+                config.resolve_allowed_project("client-backend")
+
+    def test_deleted_folder_name_alias_does_not_reappear(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            project = Path(temporary) / "RokidGlasses"
+            project.mkdir()
+            config = ConnectorConfig(
+                allowed_roots=[str(project)],
+                project_aliases={str(project): ["Очки", "Дефолт"]},
+            )
+
+            self.assertEqual(config.project_voice_aliases(project), ["Очки", "Дефолт"])
+            with self.assertRaises(ValueError):
+                config.resolve_allowed_project("RokidGlasses")
 
     def test_explicit_default_root_does_not_reorder_allowed_projects(self):
         with tempfile.TemporaryDirectory() as temporary:

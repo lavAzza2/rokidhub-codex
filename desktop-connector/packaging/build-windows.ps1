@@ -12,7 +12,7 @@ try {
         --clean `
         --onefile `
         --windowed `
-        --name "RokidHub-Desktop-Connector-v0.6.0-beta.1" `
+        --name "RokidHub-Desktop-Connector-v0.6.0-beta.2" `
         --paths "src" `
         --collect-data "rokidhub_desktop_connector" `
         "packaging\windows_entry.py"

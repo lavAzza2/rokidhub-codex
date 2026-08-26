@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rokidhub-desktop-connector"
-version = "0.6.0b1"
+version = "0.6.0b2"
 description = "Outbound-only Windows connector between RokidHub and local Codex app-server"
 requires-python = ">=3.11"
 dependencies = ["PySide6>=6.8,<7", "certifi>=2025.8.3"]

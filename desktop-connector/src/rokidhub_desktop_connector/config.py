@@ -136,11 +136,11 @@ class ConnectorConfig:
             (_alias_list(aliases) for key, aliases in self.project_aliases.items() if _path_key(key) == path_key),
             [],
         )
-        aliases = list(configured)
         folder_name = Path(path).name
-        if folder_name.casefold() not in {alias.casefold() for alias in aliases}:
-            aliases.append(folder_name)
-        return aliases or [folder_name]
+        # The folder name is only the initial fallback. Once the user saves an
+        # explicit list, that list is authoritative so a deleted folder-name
+        # alias does not silently come back in the editor or voice resolver.
+        return list(configured) if configured else [folder_name]
 
     def resolve_allowed_project(self, spoken_name: str) -> Path:
         wanted = _normalize_project_name(spoken_name)

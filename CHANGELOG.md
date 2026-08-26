@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.6.0-beta.2 — 2026-08-26
+
+- Explicit project voice aliases are now authoritative: after the user removes
+  the real folder name from an alias list, it no longer reappears in Settings
+  or remains silently available to the voice project resolver.
+
 ## 0.6.0-beta.1 — 2026-08-25
 
 - The overview uses a green check and green status text only while the Connector

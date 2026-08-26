@@ -75,6 +75,6 @@ variables or GitHub secrets. Keys and raw bearer tokens must never be committed.
 
 ## Status
 
-`v0.6.0-beta.1` is an early public beta. Keep local backups and start with the
+`v0.6.0-beta.2` is an early public beta. Keep local backups and start with the
 read-only policy. Automatic dangerous actions and unrestricted filesystem access
 are intentionally unavailable.
