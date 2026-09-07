@@ -17,6 +17,7 @@ class LocalApprovalHandler:
     SUPPORTED_METHODS = {
         "item/commandExecution/requestApproval",
         "item/fileChange/requestApproval",
+        "item/permissions/requestApproval",
     }
 
     def __init__(
@@ -33,10 +34,25 @@ class LocalApprovalHandler:
     def __call__(self, method: str, params: dict[str, Any]) -> str:
         if method not in self.SUPPORTED_METHODS:
             return "decline"
-        requested_path = params.get("cwd") if method.endswith("commandExecution/requestApproval") else params.get("grantRoot")
+        if method.endswith("commandExecution/requestApproval") or method.endswith("permissions/requestApproval"):
+            requested_path = params.get("cwd")
+        else:
+            requested_path = params.get("grantRoot")
         if requested_path and not _is_within(Path(str(requested_path)), self.allowed_root):
             return "decline"
-        if method.endswith("commandExecution/requestApproval"):
+        if method.endswith("permissions/requestApproval"):
+            permissions = params.get("permissions")
+            network = permissions.get("network") if isinstance(permissions, dict) else None
+            file_system = permissions.get("fileSystem") if isinstance(permissions, dict) else None
+            if file_system or not isinstance(network, dict) or network.get("enabled") is not True:
+                return "decline"
+            detail = (
+                "Codex запрашивает сетевой доступ для текущего шага."
+                if self.language == "ru"
+                else "Codex requests network access for the current step."
+            )
+            title = "RokidHub · подтверждение сети" if self.language == "ru" else "RokidHub · network approval"
+        elif method.endswith("commandExecution/requestApproval"):
             network = params.get("networkApprovalContext")
             if network:
                 unknown = "неизвестный адрес" if self.language == "ru" else "unknown address"
@@ -60,16 +76,18 @@ class LocalApprovalHandler:
             title = "RokidHub · подтверждение записи" if self.language == "ru" else "RokidHub · write approval"
         reason = str(params.get("reason") or "").strip()
         if self.language == "ru":
+            question = "Разрешить для текущего turn?" if method.endswith("permissions/requestApproval") else "Разрешить один раз?"
             body = (
                 f"{detail}\n\nПроект: {self.allowed_root}\n"
                 + (f"Причина: {reason[:600]}\n\n" if reason else "\n")
-                + "Разрешить один раз?\n\nДа — разрешить, Нет — отклонить, Отмена — остановить задачу."
+                + f"{question}\n\nДа — разрешить, Нет — отклонить, Отмена — остановить задачу."
             )
         else:
+            question = "Allow for this turn?" if method.endswith("permissions/requestApproval") else "Allow once?"
             body = (
                 f"{detail}\n\nProject: {self.allowed_root}\n"
                 + (f"Reason: {reason[:600]}\n\n" if reason else "\n")
-                + "Allow once?\n\nYes — allow, No — decline, Cancel — stop the task."
+                + f"{question}\n\nYes — allow, No — decline, Cancel — stop the task."
             )
         decision = self.prompt(title, body)
         return decision if decision in {"accept", "decline", "cancel"} else "decline"

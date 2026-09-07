@@ -183,7 +183,14 @@ class AppServerClient:
             decision = handler(method, values)
         except Exception:
             decision = "decline"
-        self._send({"id": request_id, "result": {"decision": decision}})
+        if method == "item/permissions/requestApproval":
+            granted = {"network": {"enabled": True}} if decision == "accept" else {}
+            self._send({
+                "id": request_id,
+                "result": {"permissions": granted, "scope": "turn", "strictAutoReview": True},
+            })
+        else:
+            self._send({"id": request_id, "result": {"decision": decision}})
 
 
 class AppServerEngine:
@@ -235,8 +242,8 @@ class AppServerEngine:
                 raise AppServerError("Локальный Codex thread для продолжения не найден")
             result = self.client.request("thread/start", {
                 "cwd": str(root),
-                "approvalPolicy": self._approval_policy(),
-                "developerInstructions": self._remote_instructions(),
+                "approvalPolicy": self._approval_policy(root),
+                "developerInstructions": self._remote_instructions(root),
             })
             thread_id = str(result.get("thread", {}).get("id", ""))
             if not thread_id:
@@ -248,7 +255,7 @@ class AppServerEngine:
             self.client.request("thread/resume", {
                 "threadId": thread_id,
                 "cwd": str(root),
-                "approvalPolicy": self._approval_policy(),
+                "approvalPolicy": self._approval_policy(root),
             })
             self.loaded_threads.add(thread_id)
 
@@ -257,7 +264,7 @@ class AppServerEngine:
             "input": _user_inputs(job),
             "clientUserMessageId": str(job["job_id"]),
             "cwd": str(root),
-            "approvalPolicy": self._approval_policy(),
+            "approvalPolicy": self._approval_policy(root),
             "sandboxPolicy": self._sandbox_policy(root),
         }
         if self.config.model:
@@ -334,33 +341,60 @@ class AppServerEngine:
         self.config_store.save(self.config)
         return root
 
-    def _approval_policy(self) -> str:
-        return {"read_only": "never", "ask": "on-request", "full_project": "untrusted"}[self.config.access_mode]
+    def _approval_policy(self, root: Path | None = None) -> str:
+        selected_root = root or self.current_approval_root
+        mode = self.config.access_mode_for(selected_root)
+        if mode == "full_project":
+            return "untrusted"
+        if mode == "ask" or self.config.network_mode_for(selected_root) == "ask":
+            return "on-request"
+        return "never"
 
     def _sandbox_policy(self, root: Path) -> dict[str, Any]:
-        if self.config.access_mode == "full_project":
+        if self.config.access_mode_for(root) == "full_project":
             return {"type": "workspaceWrite", "writableRoots": [str(root)], "networkAccess": False}
         return {"type": "readOnly", "networkAccess": False}
 
-    def _remote_instructions(self) -> str:
-        if self.config.access_mode == "read_only":
-            return self.REMOTE_INSTRUCTIONS
-        if self.config.access_mode == "ask":
-            return (
+    def _remote_instructions(self, root: Path | None = None) -> str:
+        selected_root = root or self.current_approval_root
+        mode = self.config.access_mode_for(selected_root)
+        network_mode = self.config.network_mode_for(selected_root)
+        if mode == "read_only":
+            file_instruction = "Work in analysis-only mode. Do not request writes, commands, secrets, or paths outside the selected project. "
+        elif mode == "ask":
+            file_instruction = (
                 "This thread is controlled by a remote voice client. Analyze first. Before any file change or command "
-                "that needs elevated permissions, request approval from the local PC user. Never use network access, "
-                "external services, destructive actions, secrets, or paths outside the selected project. Keep the final "
-                "answer under 700 characters and return only a concise spoken summary."
+                "that needs elevated permissions, request approval from the local PC user. Never access secrets or paths "
+                "outside the selected project. "
             )
+        else:
+            file_instruction = (
+                "The local PC user explicitly enabled workspace write access for the selected project only. You may make "
+                "ordinary in-project edits and run non-destructive local checks. Never access secrets or paths outside the "
+                "selected project. Request local approval for dangerous actions. "
+            )
+        network_instruction = (
+            "Network access and external services are forbidden. "
+            if network_mode == "disabled"
+            else "Before every network or external-service access, request explicit approval from the local PC user. "
+        )
         return (
-            "The local PC user explicitly enabled workspace write access for the selected project only. You may make "
-            "ordinary in-project edits and run non-destructive local checks. Never use network access, external services, "
-            "destructive actions, secrets, or paths outside the selected project. Request local approval when required. "
+            file_instruction
+            + network_instruction
+            + "Never perform destructive actions automatically. "
             "Keep the final answer under 700 characters and return only a concise spoken summary."
         )
 
     def _handle_approval(self, method: str, params: dict[str, Any]) -> str:
-        if self.config.access_mode == "read_only":
+        file_mode = self.config.access_mode_for(self.current_approval_root)
+        network_mode = self.config.network_mode_for(self.current_approval_root)
+        permissions = params.get("permissions") if method == "item/permissions/requestApproval" else None
+        permission_network = permissions.get("network") if isinstance(permissions, dict) else None
+        command_network = params.get("networkApprovalContext") if method == "item/commandExecution/requestApproval" else None
+        if permission_network or command_network:
+            if network_mode != "ask":
+                return "decline"
+        elif file_mode == "read_only":
             return "decline"
         handler = LocalApprovalHandler(self.current_approval_root, language=self.config.language)
         decision = handler(method, params)

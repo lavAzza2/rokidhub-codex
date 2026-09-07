@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.0-beta.4 — 2026-09-07
+
+- Fixed Windows pairing codes being hidden by a CP1251/UTF-8 mismatch in the
+  packaged Connector. The GUI now safely accepts both encodings.
+- Added per-project file and network access settings with inherited defaults.
+- Project rows can be selected for alias editing without changing the default
+  project; only the radio control changes the default.
+
 ## 0.6.0-beta.3 — 2026-08-26
 
 - The Overview page now presents the active access policy as a compact summary

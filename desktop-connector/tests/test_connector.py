@@ -9,21 +9,50 @@ import threading
 from pathlib import Path
 from unittest.mock import patch
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QApplication
+
 from rokidhub_desktop_connector.api import HubApi
-from rokidhub_desktop_connector.app_server import AppServerEngine, _bounded_summary, _resolve_subprocess_command
+from rokidhub_desktop_connector.app_server import AppServerClient, AppServerEngine, _bounded_summary, _resolve_subprocess_command
 from rokidhub_desktop_connector.approval import LocalApprovalHandler
 from rokidhub_desktop_connector.autostart import build_autostart_command
 from rokidhub_desktop_connector.config import ConfigStore, ConnectorConfig, is_local_hub_url
 from rokidhub_desktop_connector.gui import (
+    ProjectRadioButton,
     Utf8LogDecoder,
     effort_label,
     hero_status_appearance,
     pairing_code_from_line,
     utf8_process_environment,
 )
+from rokidhub_desktop_connector.icons import IconFactory
 from rokidhub_desktop_connector.i18n import Translator, detect_system_language, resolve_language
 from rokidhub_desktop_connector.runner import ConnectorService, MockEngine
 from rokidhub_desktop_connector.token_store import DpapiTokenStore
+
+
+class ProjectRadioButtonTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def test_row_text_selects_without_changing_default(self):
+        button = ProjectRadioButton("Default · C:\\workspace", IconFactory())
+        button.resize(320, 54)
+        row_clicks: list[bool] = []
+        button.row_clicked.connect(lambda: row_clicks.append(True))
+
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton, pos=QPoint(180, 27))
+
+        self.assertFalse(button.isChecked())
+        self.assertEqual(row_clicks, [True])
+
+        QTest.mouseClick(button, Qt.MouseButton.LeftButton, pos=QPoint(20, 27))
+
+        self.assertTrue(button.isChecked())
 
 
 class ConfigTests(unittest.TestCase):
@@ -82,6 +111,36 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(context.verify_mode, ssl.CERT_REQUIRED)
         self.assertTrue(context.check_hostname)
 
+    def test_project_permission_overrides_round_trip_and_inherit_defaults(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            first = directory / "first"
+            second = directory / "second"
+            first.mkdir()
+            second.mkdir()
+            store = ConfigStore(directory / "config")
+            config = ConnectorConfig(
+                hub_url="http://127.0.0.1:8000",
+                allowed_roots=[str(first), str(second)],
+                default_root=str(first),
+                access_mode="ask",
+                network_mode="disabled",
+            )
+            config.set_project_access_mode(second, "full_project")
+            config.set_project_network_mode(second, "ask")
+            store.save(config)
+
+            loaded = store.load()
+
+            self.assertEqual(loaded.access_mode_for(first), "ask")
+            self.assertEqual(loaded.network_mode_for(first), "disabled")
+            self.assertEqual(loaded.access_mode_for(second), "full_project")
+            self.assertEqual(loaded.network_mode_for(second), "ask")
+            loaded.set_project_access_mode(second, None)
+            loaded.set_project_network_mode(second, None)
+            self.assertEqual(loaded.access_mode_for(second), "ask")
+            self.assertEqual(loaded.network_mode_for(second), "disabled")
+
     def test_autostart_command_contains_gui_but_no_secret(self):
         command = build_autostart_command(Path("C:/Users/Test/AppData/Local/RokidHub/DesktopConnector"))
         self.assertIn("rokidhub_desktop_connector", command)
@@ -138,6 +197,15 @@ class ConfigTests(unittest.TestCase):
         lines += decoder.feed(payload[-3:], final=True)
 
         self.assertEqual(lines, [expected, "Следующая строка"])
+
+    def test_log_decoder_accepts_cp1251_from_windowed_windows_child(self):
+        expected = "Одноразовый код: B65-B4F"
+        decoder = Utf8LogDecoder()
+
+        lines = decoder.feed((expected + "\r\n").encode("cp1251"))
+
+        self.assertEqual(lines, [expected])
+        self.assertEqual(pairing_code_from_line(lines[0]), "B65-B4F")
 
     def test_pairing_code_is_detected_in_cli_output(self):
         self.assertEqual(pairing_code_from_line("Одноразовый код: 1234-5678"), "1234-5678")
@@ -517,6 +585,51 @@ class AppServerEngineTests(unittest.TestCase):
                 "networkAccess": False,
             })
 
+    def test_project_permissions_drive_app_server_policy_and_network_stays_approval_only(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            locked = directory / "locked"
+            trusted = directory / "trusted"
+            locked.mkdir()
+            trusted.mkdir()
+            config = ConnectorConfig(
+                hub_url="http://127.0.0.1:8000",
+                allowed_roots=[str(locked), str(trusted)],
+                default_root=str(locked),
+                access_mode="read_only",
+                network_mode="disabled",
+            )
+            config.set_project_access_mode(trusted, "full_project")
+            config.set_project_network_mode(trusted, "ask")
+            engine = AppServerEngine(config, ConfigStore(directory / "config"))
+
+            self.assertEqual(engine._approval_policy(locked), "never")
+            self.assertEqual(engine._sandbox_policy(locked), {"type": "readOnly", "networkAccess": False})
+            self.assertEqual(engine._approval_policy(trusted), "untrusted")
+            self.assertEqual(engine._sandbox_policy(trusted), {
+                "type": "workspaceWrite",
+                "writableRoots": [str(trusted)],
+                "networkAccess": False,
+            })
+            self.assertIn("request explicit approval", engine._remote_instructions(trusted))
+
+    def test_permissions_request_returns_turn_scoped_network_grant_only(self):
+        client = AppServerClient(["codex", "app-server"], Path.cwd(), lambda _method, _params: "accept")
+        with patch.object(client, "_send") as send:
+            client._handle_server_request(17, "item/permissions/requestApproval", {
+                "cwd": str(Path.cwd()),
+                "permissions": {"network": {"enabled": True}},
+            })
+
+        self.assertEqual(send.call_args.args[0], {
+            "id": 17,
+            "result": {
+                "permissions": {"network": {"enabled": True}},
+                "scope": "turn",
+                "strictAutoReview": True,
+            },
+        })
+
     def test_project_selection_is_resolved_and_stored_only_locally(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
@@ -579,6 +692,26 @@ class AppServerEngineTests(unittest.TestCase):
             self.assertEqual(decision, "decline")
             self.assertIn("write approval", prompts[0][0])
             self.assertIn("Allow once?", prompts[0][1])
+
+    def test_local_approval_accepts_network_only_permission_request(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary).resolve()
+            prompts = []
+            handler = LocalApprovalHandler(root, lambda title, body: prompts.append((title, body)) or "accept")
+
+            accepted = handler("item/permissions/requestApproval", {
+                "cwd": str(root),
+                "permissions": {"network": {"enabled": True}},
+            })
+            declined = handler("item/permissions/requestApproval", {
+                "cwd": str(root),
+                "permissions": {"network": {"enabled": True}, "fileSystem": {"write": [str(root)]}},
+            })
+
+            self.assertEqual(accepted, "accept")
+            self.assertEqual(declined, "decline")
+            self.assertIn("сети", prompts[0][0])
+            self.assertIn("turn", prompts[0][1])
 
     @unittest.skipUnless(os.name == "nt", "Windows executable resolution only")
     def test_codex_npm_shim_resolves_to_executable_without_shell(self):

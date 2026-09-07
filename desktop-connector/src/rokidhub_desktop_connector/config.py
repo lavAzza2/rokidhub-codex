@@ -11,6 +11,7 @@ from urllib.parse import urlparse
 
 
 ACCESS_MODES = {"read_only", "ask", "full_project"}
+NETWORK_MODES = {"disabled", "ask"}
 LANGUAGE_PREFERENCES = {"auto", "ru", "en"}
 
 
@@ -50,6 +51,9 @@ class ConnectorConfig:
     service_tier: str = ""
     mock_mode: bool = False
     access_mode: str = "read_only"
+    project_access_modes: dict[str, str] = field(default_factory=dict)
+    network_mode: str = "disabled"
+    project_network_modes: dict[str, str] = field(default_factory=dict)
     project_aliases: dict[str, list[str]] = field(default_factory=dict)
     conversation_roots: dict[str, str] = field(default_factory=dict)
     language: str = "auto"
@@ -76,11 +80,23 @@ class ConnectorConfig:
             raise ValueError("Значение service tier слишком длинное")
         if self.access_mode not in ACCESS_MODES:
             raise ValueError("Неизвестный профиль доступа")
+        if self.network_mode not in NETWORK_MODES:
+            raise ValueError("Неизвестный профиль сетевого доступа")
         if self.language not in LANGUAGE_PREFERENCES:
             raise ValueError("Неизвестный язык интерфейса")
         allowed = {_path_key(item) for item in self.allowed_roots}
         if self.default_root and _path_key(self.default_root) not in allowed:
             raise ValueError("Папка по умолчанию должна быть в списке разрешённых проектов")
+        for path, mode in self.project_access_modes.items():
+            if _path_key(path) not in allowed:
+                raise ValueError("Профиль доступа задан для неразрешённой папки")
+            if mode not in ACCESS_MODES:
+                raise ValueError("Неизвестный профиль доступа проекта")
+        for path, mode in self.project_network_modes.items():
+            if _path_key(path) not in allowed:
+                raise ValueError("Сетевой профиль задан для неразрешённой папки")
+            if mode not in NETWORK_MODES:
+                raise ValueError("Неизвестный сетевой профиль проекта")
         for path, aliases_value in list(self.project_aliases.items()):
             if _path_key(path) not in allowed:
                 raise ValueError("Голосовое имя задано для неразрешённой папки")
@@ -128,6 +144,40 @@ class ConnectorConfig:
 
     def project_alias(self, root: str | Path) -> str:
         return self.project_voice_aliases(root)[0]
+
+    def project_access_mode(self, root: str | Path) -> str | None:
+        wanted = _path_key(root)
+        return next((mode for path, mode in self.project_access_modes.items() if _path_key(path) == wanted), None)
+
+    def access_mode_for(self, root: str | Path) -> str:
+        return self.project_access_mode(root) or self.access_mode
+
+    def set_project_access_mode(self, root: str | Path, mode: str | None) -> None:
+        wanted = _path_key(root)
+        self.project_access_modes = {
+            path: value for path, value in self.project_access_modes.items() if _path_key(path) != wanted
+        }
+        if mode is not None:
+            if mode not in ACCESS_MODES:
+                raise ValueError("Неизвестный профиль доступа проекта")
+            self.project_access_modes[str(Path(root))] = mode
+
+    def project_network_mode(self, root: str | Path) -> str | None:
+        wanted = _path_key(root)
+        return next((mode for path, mode in self.project_network_modes.items() if _path_key(path) == wanted), None)
+
+    def network_mode_for(self, root: str | Path) -> str:
+        return self.project_network_mode(root) or self.network_mode
+
+    def set_project_network_mode(self, root: str | Path, mode: str | None) -> None:
+        wanted = _path_key(root)
+        self.project_network_modes = {
+            path: value for path, value in self.project_network_modes.items() if _path_key(path) != wanted
+        }
+        if mode is not None:
+            if mode not in NETWORK_MODES:
+                raise ValueError("Неизвестный сетевой профиль проекта")
+            self.project_network_modes[str(Path(root))] = mode
 
     def project_voice_aliases(self, root: str | Path) -> list[str]:
         path = str(Path(root))
@@ -197,6 +247,9 @@ class ConfigStore:
             service_tier=str(payload.get("service_tier", "")),
             mock_mode=bool(payload.get("mock_mode", False)),
             access_mode=str(payload.get("access_mode", "read_only")),
+            project_access_modes={str(key): str(value) for key, value in payload.get("project_access_modes", {}).items()},
+            network_mode=str(payload.get("network_mode", "disabled")),
+            project_network_modes={str(key): str(value) for key, value in payload.get("project_network_modes", {}).items()},
             project_aliases={str(key): _alias_list(value) for key, value in payload.get("project_aliases", {}).items()},
             conversation_roots={str(key): str(value) for key, value in payload.get("conversation_roots", {}).items()},
             language=str(payload.get("language", "auto")),

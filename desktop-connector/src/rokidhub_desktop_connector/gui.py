@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import codecs
 import re
 import sys
 import threading
@@ -51,6 +50,10 @@ ACCESS_KEYS = {
     "read_only": "access_read_only",
     "ask": "access_ask",
     "full_project": "access_full",
+}
+NETWORK_KEYS = {
+    "disabled": "network_disabled",
+    "ask": "network_ask",
 }
 EFFORT_KEYS = {
     "none": "analysis_none",
@@ -120,35 +123,48 @@ def pairing_code_from_line(line: str) -> str | None:
 
 
 class Utf8LogDecoder:
-    """Decode QProcess chunks without breaking UTF-8 characters or partial lines."""
+    """Decode UTF-8 output and tolerate CP1251 output from older Windows builds."""
 
     def __init__(self):
-        self._decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
-        self._pending = ""
+        self._pending = b""
 
     def feed(self, payload: bytes, *, final: bool = False) -> list[str]:
-        self._pending += self._decoder.decode(payload, final=final)
-        parts = self._pending.splitlines(keepends=True)
-        self._pending = ""
-        lines: list[str] = []
-        for part in parts:
-            if part.endswith(("\r", "\n")):
-                lines.append(part.rstrip("\r\n"))
-            else:
-                self._pending = part
-        if final and self._pending:
-            lines.append(self._pending)
-            self._pending = ""
-        return lines
+        self._pending += payload
+        parts = self._pending.split(b"\n")
+        if final:
+            self._pending = b""
+            if parts and not parts[-1]:
+                parts.pop()
+        else:
+            self._pending = parts.pop()
+        return [self._decode_line(part.rstrip(b"\r")) for part in parts]
+
+    @staticmethod
+    def _decode_line(payload: bytes) -> str:
+        try:
+            return payload.decode("utf-8")
+        except UnicodeDecodeError:
+            return payload.decode("cp1251", errors="replace")
 
 
 class ProjectRadioButton(QRadioButton):
+    row_clicked = Signal()
+
     def __init__(self, text: str, icons: IconFactory):
         super().__init__(text)
         self._icons = icons
         self.setIconSize(QSize(19, 19))
         self.toggled.connect(self._sync_icon)
         self._sync_icon(False)
+
+    def mousePressEvent(self, event) -> None:
+        # A project row has two separate actions: its text selects the row for
+        # editing, while only the compact radio area changes the default root.
+        if event.button() == Qt.MouseButton.LeftButton and event.position().x() > 44:
+            self.row_clicked.emit()
+            event.accept()
+            return
+        super().mousePressEvent(event)
 
     def _sync_icon(self, checked: bool) -> None:
         self.setIcon(self._icons.icon("dot-circle-o" if checked else "circle-o", "#62f238" if checked else "#687069"))
@@ -184,7 +200,6 @@ class ConnectorWindow(QMainWindow):
         self.process.finished.connect(self._process_finished)
         self.process_purpose = ""
         self.pending_cli: tuple[str, list[str]] | None = None
-        self.previous_access_mode = self.config.access_mode
         self._quitting = False
         self._tray_notice_shown = False
         self._log_started = False
@@ -544,9 +559,21 @@ class ConnectorWindow(QMainWindow):
         layout = QVBoxLayout(surface)
         layout.setContentsMargins(22, 22, 22, 22)
         layout.setSpacing(14)
+        self.security_project_label = self._field_title()
+        layout.addWidget(self.security_project_label)
+        self.security_project_combo = QComboBox()
+        self.security_project_combo.currentIndexChanged.connect(self._security_project_changed)
+        layout.addWidget(self.security_project_combo)
+        self.security_files_label = self._field_title()
+        layout.addWidget(self.security_files_label)
         self.security_access_combo = QComboBox()
-        self.security_access_combo.currentIndexChanged.connect(lambda: self._access_changed(self.security_access_combo))
+        self.security_access_combo.currentIndexChanged.connect(self._access_changed)
         layout.addWidget(self.security_access_combo)
+        self.security_network_label = self._field_title()
+        layout.addWidget(self.security_network_label)
+        self.security_network_combo = QComboBox()
+        self.security_network_combo.currentIndexChanged.connect(self._network_changed)
+        layout.addWidget(self.security_network_combo)
         self.security_description = QLabel()
         self.security_description.setWordWrap(True)
         self.security_description.setObjectName("pageIntro")
@@ -700,6 +727,9 @@ class ConnectorWindow(QMainWindow):
         self.model_label.setText(self._t("model"))
         self.effort_label_widget.setText(self._t("reasoning"))
         self.tier_label.setText(self._t("speed"))
+        self.security_project_label.setText(self._t("security_project"))
+        self.security_files_label.setText(self._t("security_files"))
+        self.security_network_label.setText(self._t("security_network"))
         self.refresh_models_button.setText(self._t("refresh_models"))
         self.mock_checkbox.setText(self._t("mock"))
         self.name_label.setText(self._t("pc_name"))
@@ -713,7 +743,7 @@ class ConnectorWindow(QMainWindow):
         self.copy_pairing_code_button.setText(self._t("copy_code"))
         self.doctor_button.setText(self._t("check"))
         self._retranslate_language_options()
-        self._refresh_access_combos()
+        self._refresh_security_projects()
         self._restore_model_selections()
         self._populate_projects()
         self._update_status()
@@ -764,6 +794,7 @@ class ConnectorWindow(QMainWindow):
                 radio.toggled.connect(
                     lambda checked, project=path, row=index: self._default_project_toggled(checked, project, row)
                 )
+                radio.row_clicked.connect(lambda row=index: self.project_list.setCurrentRow(row))
                 self.default_project_group.addButton(radio)
                 self.project_list.setItemWidget(item, radio)
             if self.folder_paths:
@@ -784,6 +815,8 @@ class ConnectorWindow(QMainWindow):
             self._update_voice_alias()
         if hasattr(self, "activity_preview") and not self._log_started:
             self._refresh_readiness_activity()
+        if hasattr(self, "security_project_combo"):
+            self._refresh_security_projects()
 
     def _refresh_readiness_activity(self) -> None:
         self.activity_preview.clear()
@@ -794,7 +827,11 @@ class ConnectorWindow(QMainWindow):
             self._add_activity_item(self._t("ready_paired"), "link")
         if self.folder_paths:
             self._add_activity_item(self._t("ready_project", project=Path(self._default_project_path()).name), "folder")
-        self._add_activity_item(self._t("ready_access", access=self._t(ACCESS_KEYS[self.config.access_mode])), "shield")
+        default_root = self._default_project_path()
+        access_mode = self.config.access_mode_for(default_root) if default_root else self.config.access_mode
+        network_mode = self.config.network_mode_for(default_root) if default_root else self.config.network_mode
+        access = self._t("access_summary", files=self._t(ACCESS_KEYS[access_mode]), network=self._t(NETWORK_KEYS[network_mode]))
+        self._add_activity_item(self._t("ready_access", access=access), "shield")
         self._add_activity_item(self._t("ready_local"), "desktop")
 
     def _add_activity_item(self, text: str, icon_name: str) -> None:
@@ -835,23 +872,60 @@ class ConnectorWindow(QMainWindow):
             return
         self._populate_projects()
 
+    def _refresh_security_projects(self) -> None:
+        if not hasattr(self, "security_project_combo"):
+            return
+        selected = str(self.security_project_combo.currentData() or "")
+        self._syncing = True
+        try:
+            self.security_project_combo.clear()
+            self.security_project_combo.addItem(self._t("security_default_scope"), "")
+            for path in self.folder_paths:
+                self.security_project_combo.addItem(f"{self.config.project_alias(path)}  ·  {path}", path)
+            index = self.security_project_combo.findData(selected)
+            self.security_project_combo.setCurrentIndex(max(0, index))
+        finally:
+            self._syncing = False
+        self._refresh_access_combos()
+
+    def _security_project_changed(self) -> None:
+        if not self._syncing:
+            self._refresh_access_combos()
+
     def _refresh_access_combos(self) -> None:
+        scope = str(self.security_project_combo.currentData() or "")
         self._syncing = True
         try:
             self.security_access_combo.clear()
+            if scope:
+                inherited = self._t(ACCESS_KEYS[self.config.access_mode])
+                self.security_access_combo.addItem(self._t("permission_inherit", value=inherited), "inherit")
             for mode, key in ACCESS_KEYS.items():
                 self.security_access_combo.addItem(self._t(key), mode)
-                if mode == self.config.access_mode:
-                    self.security_access_combo.setCurrentIndex(self.security_access_combo.count() - 1)
+            access_selected = self.config.project_access_mode(scope) if scope else self.config.access_mode
+            self.security_access_combo.setCurrentIndex(max(0, self.security_access_combo.findData(access_selected or "inherit")))
+
+            self.security_network_combo.clear()
+            if scope:
+                inherited = self._t(NETWORK_KEYS[self.config.network_mode])
+                self.security_network_combo.addItem(self._t("permission_inherit", value=inherited), "inherit")
+            for mode, key in NETWORK_KEYS.items():
+                self.security_network_combo.addItem(self._t(key), mode)
+            network_selected = self.config.project_network_mode(scope) if scope else self.config.network_mode
+            self.security_network_combo.setCurrentIndex(max(0, self.security_network_combo.findData(network_selected or "inherit")))
         finally:
             self._syncing = False
         self._update_security_text()
 
-    def _access_changed(self, combo: QComboBox) -> None:
-        if self._syncing or combo.currentIndex() < 0:
+    def _access_changed(self) -> None:
+        if self._syncing or self.security_access_combo.currentIndex() < 0:
             return
-        selected = str(combo.currentData())
-        if selected == "full_project" and self.previous_access_mode != "full_project":
+        scope = str(self.security_project_combo.currentData() or "")
+        selected = str(self.security_access_combo.currentData())
+        previous_global = self.config.access_mode
+        previous_projects = dict(self.config.project_access_modes)
+        current = self.config.access_mode_for(scope) if scope else self.config.access_mode
+        if selected == "full_project" and current != "full_project":
             answer = QMessageBox.question(
                 self,
                 self._t("full_access_title"),
@@ -862,26 +936,58 @@ class ConnectorWindow(QMainWindow):
             if answer != QMessageBox.StandardButton.Yes:
                 self._refresh_access_combos()
                 return
-        self.config.access_mode = selected
+        if scope:
+            self.config.set_project_access_mode(scope, None if selected == "inherit" else selected)
+        else:
+            self.config.access_mode = selected
         try:
             self.config_store.save(self.config)
         except (OSError, ValueError) as exc:
             self._show_error(str(exc))
-            self.config.access_mode = self.previous_access_mode
+            self.config.access_mode = previous_global
+            self.config.project_access_modes = previous_projects
+        self._refresh_access_combos()
+
+    def _network_changed(self) -> None:
+        if self._syncing or self.security_network_combo.currentIndex() < 0:
+            return
+        scope = str(self.security_project_combo.currentData() or "")
+        selected = str(self.security_network_combo.currentData())
+        previous_global = self.config.network_mode
+        previous_projects = dict(self.config.project_network_modes)
+        if scope:
+            self.config.set_project_network_mode(scope, None if selected == "inherit" else selected)
         else:
-            self.previous_access_mode = selected
+            self.config.network_mode = selected
+        try:
+            self.config_store.save(self.config)
+        except (OSError, ValueError) as exc:
+            self._show_error(str(exc))
+            self.config.network_mode = previous_global
+            self.config.project_network_modes = previous_projects
         self._refresh_access_combos()
 
     def _update_security_text(self) -> None:
+        default_root = self._default_project_path()
+        overview_access = self.config.access_mode_for(default_root) if default_root else self.config.access_mode
+        overview_network = self.config.network_mode_for(default_root) if default_root else self.config.network_mode
+        scope = str(self.security_project_combo.currentData() or "")
+        security_access = self.config.access_mode_for(scope) if scope else self.config.access_mode
+        security_network = self.config.network_mode_for(scope) if scope else self.config.network_mode
         key = {
             "read_only": "security_read_only",
             "ask": "security_ask",
             "full_project": "security_full",
-        }[self.config.access_mode]
-        text = self._t(key)
-        self.overview_access_button.setText(self._t(ACCESS_KEYS[self.config.access_mode]))
-        self.overview_security_label.setText(text)
-        self.security_description.setText(text)
+        }
+        overview_text = f"{self._t(key[overview_access])} {self._t('security_network_' + overview_network)}"
+        security_text = f"{self._t(key[security_access])} {self._t('security_network_' + security_network)}"
+        if scope and self.config.project_access_mode(scope) is None and self.config.project_network_mode(scope) is None:
+            security_text = f"{self._t('security_inherited')} {security_text}"
+        self.overview_access_button.setText(
+            self._t("access_summary", files=self._t(ACCESS_KEYS[overview_access]), network=self._t(NETWORK_KEYS[overview_network]))
+        )
+        self.overview_security_label.setText(overview_text)
+        self.security_description.setText(security_text)
         if hasattr(self, "activity_preview") and not self._log_started:
             self._refresh_readiness_activity()
 
@@ -909,6 +1015,8 @@ class ConnectorWindow(QMainWindow):
             return
         path = self.folder_paths.pop(index)
         self.config.project_aliases = {key: value for key, value in self.config.project_aliases.items() if key.casefold() != path.casefold()}
+        self.config.set_project_access_mode(path, None)
+        self.config.set_project_network_mode(path, None)
         if self.config.default_root.casefold() == path.casefold():
             self.config.default_root = self.folder_paths[0] if self.folder_paths else ""
         self._save(silent=True)
@@ -1067,12 +1175,13 @@ class ConnectorWindow(QMainWindow):
             self.config.default_root = ""
         allowed = {item.casefold() for item in self.folder_paths}
         self.config.project_aliases = {path: alias for path, alias in self.config.project_aliases.items() if path.casefold() in allowed}
+        self.config.project_access_modes = {path: mode for path, mode in self.config.project_access_modes.items() if path.casefold() in allowed}
+        self.config.project_network_modes = {path: mode for path, mode in self.config.project_network_modes.items() if path.casefold() in allowed}
         self.config.model = str(self.model_combo.currentData() or "").strip()
         self.config.reasoning_effort = str(self.effort_combo.currentData() or "").strip()
         self.config.service_tier = str(self.tier_combo.currentData() or "").strip()
         self.config.mock_mode = self.mock_checkbox.isChecked()
         self.config_store.save(self.config)
-        self.previous_access_mode = self.config.access_mode
         if not silent:
             self._update_status()
 

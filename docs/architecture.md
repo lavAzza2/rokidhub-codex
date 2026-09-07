@@ -168,12 +168,15 @@ Agent deltas stay inside the Connector. The adapter groups them by the schema's
 `phase=final_answer`; interim `phase=commentary` text is never appended to the
 Hub/TTS result.
 
-The local GUI offers three policy profiles: `readOnly` + `never`, `readOnly` +
-`on-request` with a local Windows approval prompt, and `workspaceWrite` scoped to
-the selected root with `untrusted` command approvals. Network remains disabled.
-`dangerFullAccess` is intentionally unavailable. The Connector refuses to start
-a Codex job until the user has configured an existing allowed root. Hub and Nexus
-cannot widen the root or change the local profile.
+The local GUI stores default permissions plus optional overrides for each allowed
+root. File/command profiles are `readOnly` + `never`, `readOnly` + `on-request`
+with a local Windows approval prompt, and `workspaceWrite` scoped to the selected
+root with `untrusted` command approvals. Network is either disabled or kept
+restricted with every access approved locally for the current turn through the
+installed App Server approval schema. Unprompted network and `dangerFullAccess`
+are intentionally unavailable. The Connector refuses to start a Codex job until
+the user has configured an existing allowed root. Hub and Nexus cannot widen the
+root or change the local profile.
 
 ## Threat model
 
@@ -184,7 +187,7 @@ cannot widen the root or change the local profile.
 | Stolen Desktop token | DPAPI at rest; scoped connector id; revocation | signed installer and auto-update |
 | Cross-user routing | all jobs bind user + Nexus + Desktop rows | multi-device audit UI |
 | Replay/duplicate delivery | idempotency key, lease id, event sequence | WSS session nonce |
-| Prompt asks for writes/exfiltration | local access profile, root checks, network disabled, local PC approval | richer diff preview before approval |
+| Prompt asks for writes/exfiltration | per-project local profiles, root checks, network blocked or turn-scoped local approval | richer diff preview before approval |
 | Malicious Hub job changes cwd | local allowlist resolution rejects it | signed policy snapshots |
 | Connector crash | lease expiry permits redelivery | resumable WSS and backoff telemetry |
 
