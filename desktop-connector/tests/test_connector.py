@@ -185,6 +185,7 @@ class ConfigTests(unittest.TestCase):
         environment = utf8_process_environment()
         self.assertEqual(environment.value("PYTHONUTF8"), "1")
         self.assertEqual(environment.value("PYTHONIOENCODING"), "utf-8")
+        self.assertEqual(environment.value("PYTHONUNBUFFERED"), "1")
 
     def test_utf8_log_decoder_preserves_split_cyrillic_chunks(self):
         expected = "Connector запущен: Codex; папка RokidGlasses"

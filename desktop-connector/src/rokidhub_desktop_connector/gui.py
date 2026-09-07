@@ -111,6 +111,7 @@ def utf8_process_environment() -> QProcessEnvironment:
     environment = QProcessEnvironment.systemEnvironment()
     environment.insert("PYTHONUTF8", "1")
     environment.insert("PYTHONIOENCODING", "utf-8")
+    environment.insert("PYTHONUNBUFFERED", "1")
     return environment
 
 

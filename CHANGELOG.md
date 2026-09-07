@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 0.6.0-beta.5 — 2026-09-07
+
+- Pairing output from the packaged Windows child process is now line-buffered
+  and flushed immediately, so the one-time code appears while the pairing
+  session is active rather than after its timeout.
+
 ## 0.6.0-beta.4 — 2026-09-07
 
 - Fixed Windows pairing codes being hidden by a CP1251/UTF-8 mismatch in the

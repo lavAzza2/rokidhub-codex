@@ -107,8 +107,8 @@ def _pair(args: argparse.Namespace, config_store: ConfigStore, token_store: Dpap
     config_store.save(config)
     api = HubApi(config.hub_url, config.connector_id)
     started = api.pairing_start(config.name, __version__)
-    print(f"Одноразовый код: {started['code']}")
-    print("Введи его в кабинете RokidHub. Жду подтверждения…")
+    print(f"Одноразовый код: {started['code']}", flush=True)
+    print("Введи его в кабинете RokidHub. Жду подтверждения…", flush=True)
     deadline = time.monotonic() + max(10, min(args.timeout, 600))
     next_update = time.monotonic() + 30
     while time.monotonic() < deadline:
@@ -117,10 +117,10 @@ def _pair(args: argparse.Namespace, config_store: ConfigStore, token_store: Dpap
             token_store.save(str(response["access_token"]))
             config.paired_hub_url = config.hub_url
             config_store.save(config)
-            print("ПК привязан. Токен защищён Windows DPAPI.")
+            print("ПК привязан. Токен защищён Windows DPAPI.", flush=True)
             return 0
         if time.monotonic() >= next_update:
-            print("Всё ещё жду подтверждения кода…")
+            print("Всё ещё жду подтверждения кода…", flush=True)
             next_update = time.monotonic() + 30
         time.sleep(2)
     raise RuntimeError("Время одноразового кода истекло; запусти pair ещё раз")

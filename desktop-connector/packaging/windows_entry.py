@@ -3,11 +3,24 @@ import sys
 
 
 def _restore_redirected_output_for_child() -> None:
-    """Bind QProcess' inherited pipe in a PyInstaller windowed child."""
-    if len(sys.argv) <= 1 or sys.stdout is not None or os.name != "nt":
+    """Expose line-buffered UTF-8 output in a PyInstaller windowed CLI child."""
+    if len(sys.argv) <= 1 or os.name != "nt":
         return
     import ctypes
     import msvcrt
+
+    existing_streams = [stream for stream in (sys.stdout, sys.stderr) if stream is not None]
+    if existing_streams:
+        for stream in existing_streams:
+            reconfigure = getattr(stream, "reconfigure", None)
+            if callable(reconfigure):
+                reconfigure(
+                    encoding="utf-8",
+                    errors="replace",
+                    line_buffering=True,
+                    write_through=True,
+                )
+        return
 
     handle = ctypes.windll.kernel32.GetStdHandle(-11)  # STD_OUTPUT_HANDLE
     if handle in (0, -1):
