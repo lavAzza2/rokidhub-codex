@@ -14,8 +14,8 @@ android {
         applicationId = "com.rokidhub.nexus.plugin.codex"
         minSdk = 30
         targetSdk = 36
-        versionCode = 8
-        versionName = "0.6.0-beta.3"
+        versionCode = 9
+        versionName = "0.6.0-beta.4"
         buildConfigField("String", "ROKIDHUB_BASE_URL", "\"$rokidHubBaseUrl\"")
         manifestPlaceholders["usesCleartextTraffic"] = "false"
     }
