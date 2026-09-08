@@ -5,9 +5,14 @@ param(
 
 $ErrorActionPreference = "Stop"
 $projectRoot = Split-Path -Parent $PSScriptRoot
-$python = Join-Path $projectRoot ".venv\Scripts\python.exe"
-if (-not (Test-Path -LiteralPath $python)) {
-    throw "Create .venv and install .[build] before packaging."
+$venvPython = Join-Path $projectRoot ".venv\Scripts\python.exe"
+if (Test-Path -LiteralPath $venvPython) {
+    $python = $venvPython
+} else {
+    $python = Get-Command python -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1
+}
+if (-not $python) {
+    throw "Python is not available. Install the pinned build dependencies before packaging."
 }
 
 $productName = "RokidHub Desktop Connector"
