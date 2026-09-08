@@ -708,7 +708,11 @@ class AppServerEngineTests(unittest.TestCase):
             root.mkdir()
             outside.mkdir()
             prompts = []
-            handler = LocalApprovalHandler(root, lambda title, body: prompts.append((title, body)) or "accept")
+            handler = LocalApprovalHandler(
+                root,
+                lambda title, body: prompts.append((title, body)) or "accept",
+                language="ru",
+            )
 
             accepted = handler("item/commandExecution/requestApproval", {"cwd": str(root), "command": "pytest"})
             declined = handler("item/commandExecution/requestApproval", {"cwd": str(outside), "command": "pytest"})
