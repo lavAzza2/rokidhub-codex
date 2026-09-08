@@ -741,7 +741,11 @@ class AppServerEngineTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary).resolve()
             prompts = []
-            handler = LocalApprovalHandler(root, lambda title, body: prompts.append((title, body)) or "accept")
+            handler = LocalApprovalHandler(
+                root,
+                lambda title, body: prompts.append((title, body)) or "accept",
+                language="ru",
+            )
 
             accepted = handler("item/permissions/requestApproval", {
                 "cwd": str(root),
