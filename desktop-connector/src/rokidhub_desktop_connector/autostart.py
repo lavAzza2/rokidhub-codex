@@ -67,3 +67,9 @@ def set_autostart(enabled: bool, config_dir: Path) -> None:
             winreg.DeleteValue(key, VALUE_NAME)
     except FileNotFoundError:
         return
+
+
+def refresh_autostart_command(config_dir: Path) -> None:
+    """Point an already-enabled startup entry at the currently running build."""
+    if is_autostart_enabled():
+        set_autostart(True, config_dir)

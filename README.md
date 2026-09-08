@@ -18,11 +18,14 @@ envelopes and stores only hashes of separate revocable Nexus and PC tokens.
 Use the latest [GitHub Release](https://github.com/lavAzza2/rokidhub-codex/releases/latest):
 
 - `RokidHub-Codex-Nexus-v*.apk` — Nexus plugin for Android;
-- `RokidHub-Desktop-Connector-v*.exe` — standalone Windows application;
+- `RokidHub-Desktop-Connector-v*-setup.exe` — recommended per-user Windows installer;
+- `RokidHub-Desktop-Connector-v*-portable.zip` — portable unpacked application;
 - `SHA256SUMS.txt` — checksums for both files.
 
 The Windows beta is not Authenticode-signed yet, so Microsoft SmartScreen may
-show a warning. Verify its SHA-256 checksum before running it.
+still show a warning. The installer uses an unpacked application layout instead
+of a self-extracting one-file executable to reduce heuristic false positives.
+Verify its SHA-256 checksum before running it; never disable antivirus protection.
 
 ## Setup
 
@@ -75,6 +78,6 @@ variables or GitHub secrets. Keys and raw bearer tokens must never be committed.
 
 ## Status
 
-`v0.6.0-beta.5` is an early public beta. Keep local backups and start with the
+`v0.6.0-beta.6` is an early public beta. Keep local backups and start with the
 read-only policy. Automatic dangerous actions and unrestricted filesystem access
 are intentionally unavailable.

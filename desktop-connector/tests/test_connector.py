@@ -6,6 +6,7 @@ import os
 import hashlib
 import ssl
 import threading
+import uuid
 from pathlib import Path
 from unittest.mock import patch
 
@@ -18,7 +19,7 @@ from PySide6.QtWidgets import QApplication
 from rokidhub_desktop_connector.api import HubApi
 from rokidhub_desktop_connector.app_server import AppServerClient, AppServerEngine, _bounded_summary, _resolve_subprocess_command
 from rokidhub_desktop_connector.approval import LocalApprovalHandler
-from rokidhub_desktop_connector.autostart import build_autostart_command
+from rokidhub_desktop_connector.autostart import build_autostart_command, refresh_autostart_command
 from rokidhub_desktop_connector.config import ConfigStore, ConnectorConfig, is_local_hub_url
 from rokidhub_desktop_connector.gui import (
     ProjectRadioButton,
@@ -31,7 +32,45 @@ from rokidhub_desktop_connector.gui import (
 from rokidhub_desktop_connector.icons import IconFactory
 from rokidhub_desktop_connector.i18n import Translator, detect_system_language, resolve_language
 from rokidhub_desktop_connector.runner import ConnectorService, MockEngine
+from rokidhub_desktop_connector.single_instance import SingleInstance
 from rokidhub_desktop_connector.token_store import DpapiTokenStore
+
+
+class SingleInstanceTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows mutex")
+    def test_second_gui_instance_is_rejected_until_first_closes(self):
+        name = f"RokidHubDesktopConnectorTest-{uuid.uuid4()}"
+        first = SingleInstance(name)
+        second = SingleInstance(name)
+        third = SingleInstance(name)
+        try:
+            self.assertTrue(first.acquire())
+            self.assertFalse(second.acquire())
+            first.close()
+            self.assertTrue(third.acquire())
+        finally:
+            first.close()
+            second.close()
+            third.close()
+
+
+class AutostartTests(unittest.TestCase):
+    def test_existing_autostart_entry_is_refreshed_for_current_build(self):
+        directory = Path("C:/Users/Test/AppData/Local/RokidHub/DesktopConnector")
+        with (
+            patch("rokidhub_desktop_connector.autostart.is_autostart_enabled", return_value=True),
+            patch("rokidhub_desktop_connector.autostart.set_autostart") as update,
+        ):
+            refresh_autostart_command(directory)
+        update.assert_called_once_with(True, directory)
+
+    def test_disabled_autostart_entry_is_not_created_implicitly(self):
+        with (
+            patch("rokidhub_desktop_connector.autostart.is_autostart_enabled", return_value=False),
+            patch("rokidhub_desktop_connector.autostart.set_autostart") as update,
+        ):
+            refresh_autostart_command(Path("C:/connector"))
+        update.assert_not_called()
 
 
 class ProjectRadioButtonTests(unittest.TestCase):

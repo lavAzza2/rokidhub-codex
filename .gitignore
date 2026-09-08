@@ -16,6 +16,7 @@ config.json
 **/*.egg-info/
 **/build/
 **/dist/
+**/artifacts/
 *.py[cod]
 *.spec
 

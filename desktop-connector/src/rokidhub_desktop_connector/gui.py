@@ -38,10 +38,11 @@ from PySide6.QtWidgets import (
 
 from .app_server import discover_models
 from .api import HubApi
-from .autostart import is_autostart_enabled, set_autostart
+from .autostart import is_autostart_enabled, refresh_autostart_command, set_autostart
 from .config import ConfigStore, is_local_hub_url, normalize_hub_url
 from .icons import IconFactory
 from .i18n import Translator
+from .single_instance import SingleInstance
 from .token_store import DpapiTokenStore
 from . import __version__
 
@@ -1587,19 +1588,32 @@ def main(
     minimized: bool = False,
     auto_start: bool = False,
 ) -> int:
+    instance = SingleInstance("RokidHubDesktopConnectorGui")
+    if not instance.acquire():
+        return 0
     app = QApplication.instance() or QApplication(sys.argv)
     app.setApplicationName("RokidHub Desktop Connector")
     app.setOrganizationName("RokidHub")
     app.setQuitOnLastWindowClosed(False)
     app.setStyle("Fusion")
+    resolved_config_store = ConfigStore(config_directory)
+    try:
+        refresh_autostart_command(resolved_config_store.directory)
+    except OSError:
+        # A locked-down profile may reject HKCU writes. The GUI remains usable
+        # and the user can retry the explicit autostart toggle in Settings.
+        pass
     window = ConnectorWindow(
-        ConfigStore(config_directory),
+        resolved_config_store,
         DpapiTokenStore(config_directory),
         minimized=minimized,
         auto_start=auto_start,
     )
     app.aboutToQuit.connect(lambda: window.tray.hide())
-    return app.exec()
+    try:
+        return app.exec()
+    finally:
+        instance.close()
 
 
 def script_main() -> int:

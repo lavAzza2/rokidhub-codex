@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 0.6.0-beta.6 — 2026-09-08
+
+- Replaced the primary self-extracting PyInstaller one-file build with an
+  unpacked application bundled in a per-user Windows installer.
+- Added stable Windows product metadata, application icon and version fields.
+- Disabled UPX explicitly and added a pinned, clean Windows packaging workflow.
+- Added a portable ZIP, SHA-256 checksums and a single-instance guard for the GUI.
+
 ## 0.6.0-beta.5 — 2026-09-07
 
 - Pairing output from the packaged Windows child process is now line-buffered

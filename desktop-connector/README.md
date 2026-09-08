@@ -28,6 +28,14 @@ py -m venv .venv
 .\start-gui.ps1
 ```
 
+Для пользователей основным дистрибутивом является per-user установщик
+`RokidHub-Desktop-Connector-v*-setup.exe`. Он устанавливает папочную сборку в
+`%LOCALAPPDATA%\Programs`, не требует прав администратора и сохраняет локальные
+настройки и DPAPI-токен при обновлении и удалении. Portable-вариант поставляется
+ZIP-архивом и должен быть полностью распакован перед запуском. Неподписанная
+beta всё ещё может вызвать предупреждение SmartScreen; отключать антивирус или
+добавлять исключения не нужно.
+
 GUI использует современную тёмную оболочку RokidHub с отдельными разделами
 «Обзор», «Проекты», «Codex», «Безопасность», «Активность» и «Настройки».
 Все интерфейсные значки используют единый монохромный Font Awesome 4.0.3;
@@ -148,6 +156,20 @@ Connector покажет одноразовый код. Войди в кабин
 $env:PYTHONPATH = "$PWD\src"
 python -m unittest discover -s tests -v
 ```
+
+Воспроизводимая Windows-сборка:
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r .\packaging\requirements-build.lock
+.\.venv\Scripts\python.exe -m pip install --no-deps -e .
+.\packaging\build-windows.ps1
+```
+
+Сценарий использует PyInstaller `onedir`, явно отключает UPX, добавляет Windows
+VERSIONINFO и создаёт portable ZIP. Для Setup EXE нужен Inno Setup 6. Если он не
+установлен, можно собрать только ZIP командой
+`.\packaging\build-windows.ps1 -SkipInstaller`. Готовые файлы и контрольные суммы
+появятся в `artifacts`.
 
 Для сверки с установленной версией протокола:
 
