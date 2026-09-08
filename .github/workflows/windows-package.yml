@@ -6,7 +6,7 @@ on:
       release_version:
         description: Release version without the leading v
         required: true
-        default: 0.6.0-beta.6
+        default: 0.6.0-beta.7
   push:
     tags:
       - "v*"

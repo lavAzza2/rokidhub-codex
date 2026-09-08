@@ -1,5 +1,5 @@
 #ifndef AppVersion
-  #define AppVersion "0.6.0-beta.6"
+  #define AppVersion "0.6.0-beta.7"
 #endif
 #ifndef SourceDir
   #error SourceDir must point to the PyInstaller onedir output
@@ -36,11 +36,11 @@ CloseApplications=force
 RestartApplications=no
 AppMutex=RokidHubDesktopConnectorGui
 UninstallDisplayIcon={app}\RokidHub Desktop Connector.exe
-VersionInfoVersion=0.6.0.6
+VersionInfoVersion=0.6.0.7
 VersionInfoCompany=RokidHub
 VersionInfoDescription=RokidHub Desktop Connector Setup
 VersionInfoProductName=RokidHub Desktop Connector
-VersionInfoProductVersion=0.6.0.6
+VersionInfoProductVersion=0.6.0.7
 
 [Languages]
 Name: "russian"; MessagesFile: "compiler:Languages\Russian.isl"

@@ -697,6 +697,7 @@ class ConnectorWindow(QMainWindow):
         self.tray_menu.insertAction(self.tray_language_menu.menuAction(), self.tray_autostart_action)
         self.tray_menu.addSeparator()
         self.tray_menu.addAction(self.tray_exit_action)
+        self.tray_menu.setDefaultAction(self.tray_open_action)
         self.tray.setContextMenu(self.tray_menu)
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray.show()
@@ -1522,9 +1523,18 @@ class ConnectorWindow(QMainWindow):
             self._show_window()
 
     def _show_window(self) -> None:
-        self.showNormal()
+        if self.isMinimized():
+            self.showNormal()
+        else:
+            self.show()
+        self.setWindowState(self.windowState() | Qt.WindowState.WindowActive)
+        self._activate_window()
+        QTimer.singleShot(0, self._activate_window)
+
+    def _activate_window(self) -> None:
         self.raise_()
         self.activateWindow()
+        QApplication.setActiveWindow(self)
 
     def _quit_from_tray(self) -> None:
         self._quitting = True
@@ -1609,6 +1619,12 @@ def main(
         minimized=minimized,
         auto_start=auto_start,
     )
+    activation_timer = QTimer(app)
+    activation_timer.setInterval(200)
+    activation_timer.timeout.connect(
+        lambda: window._show_window() if instance.consume_show_request() else None
+    )
+    activation_timer.start()
     app.aboutToQuit.connect(lambda: window.tray.hide())
     try:
         return app.exec()

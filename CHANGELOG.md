@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 0.6.0-beta.7 — 2026-09-08
+
+- Fixed restoring the hidden window from the tray on Windows.
+- Reopening the app from its shortcut now activates the existing GUI instead
+  of silently exiting because another instance owns the mutex.
+- The tray menu now marks “Open” as its default action.
+
 ## 0.6.0-beta.6 — 2026-09-08
 
 - Replaced the primary self-extracting PyInstaller one-file build with an

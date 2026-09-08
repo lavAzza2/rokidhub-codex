@@ -46,6 +46,8 @@ class SingleInstanceTests(unittest.TestCase):
         try:
             self.assertTrue(first.acquire())
             self.assertFalse(second.acquire())
+            self.assertTrue(first.consume_show_request())
+            self.assertFalse(first.consume_show_request())
             first.close()
             self.assertTrue(third.acquire())
         finally:
